@@ -1,14 +1,7 @@
 //The start flags don't actually do anything.  Instead wires propogate directly from one stage to the next.  
-// The authdata might be in the wrong place [127:0] instead of [383:?]
-// I may need to add or remove registers to make things fit.  
-// [X] Absorb function validated.
-// [X] Encrypt function validated. 
-// [X] squeeze function validated.
-// [X] Cyclist initialization validated.
-// Certain ambiguities still exist.  Like which part of the vector does squeeze() spit out?
-// Need to add control logic.  
-
-
+//[ ] Take a look to see if the FSM should be used more functionally.  It's kind of decorative.
+//[ ] Look for dead code.
+//[ ] Perform final algorithm validation.  
 
         module xoodyak(
           input logic             eph1,
@@ -150,24 +143,7 @@
         logic [191:0] dectestvec;
         logic [127:0] authdata_dec;
         logic encdone_dec;
-        
-        
-        
-/*         crypt decryptinst(
-        
-          .eph1         (eph1),
-          .reset         (reset),
-          .start         (asso_done),
-          
-          .state         (state_enc_in),
-          .cryptin       (textout),
-          
-          .cryptout     (dectestvec), //from the encrypt modules  (output pin to top)
-          .authdata     (authdata_dec),  //from the encrypt modules (output pin to top)
-          .encdone      (encdone_dec)
-        ); */
-        
-        
+               
 
         endmodule: xoodyak
 
@@ -343,19 +319,10 @@
           output logic         xood_done 
 
       );
-        
-/* Permute requires:                                                                       //These function requirements have not been formalized or created yet.  
-A constantly asserted (0 or 1) eph1, reset, start
-start must be a pulse input. 
-The state_in is read @posedge start and must be valid when that occurs.
-                    
-              
-Permute produces:
-A 384' permuted state, which is the function's output.
-A xood_done flag, which tells the user that the permute function is complete.  
-A running permutation cannot be cancelled and will not accept inputs until it completes.  
-        
-        
+        	//----------------------------------------------------------------
+					//XOODYAK's permute function
+					//----------------------------------------------------------------
+				  /*
            Each round from 0 to b is identical.  Round 0 is documented thorougly.  Other rounds are not.  
            Refer to round 0's documentation to determine the nature of behavior.  
            
@@ -386,9 +353,6 @@ A running permutation cannot be cancelled and will not accept inputs until it co
            Ci, a round constant depending on the round.  Beginning with round 0's constant and ending with round b's constant,
                they are : { 32'h58, 32'h38, 32'h3c0, 32'hD0, 32'h120, 32'h14, 32'h60, 32'h2c, 32'h380, 32'hF0, 32'h1A0, 32'h12}
            */
-        
-        
-        
         
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
