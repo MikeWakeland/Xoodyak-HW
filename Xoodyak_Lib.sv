@@ -2,13 +2,15 @@
 // The authdata might be in the wrong place [127:0] instead of [383:?]
 // I may need to add or remove registers to make things fit.  
 // [X] Absorb function validated.
-// [ ] Encrypt function NOT validated. 
-// [ ] squeeze function NOT validated.
+// [X] Encrypt function validated. 
+// [X] squeeze function validated.
 // [X] Cyclist initialization validated.
+// Certain ambiguities still exist.  Like which part of the vector does squeeze() spit out?
+// Need to add control logic.  
 
 
 
-				module xoodyaktop(
+				module xoodyak(
 					input logic 						eph1,
 					input logic 						reset,
 					input logic							start,
@@ -21,8 +23,9 @@
 
 					output logic [127:0]    authdata,
 					output logic [191:0]    textout,
-					output logic            encdone  //enc and dec appear to be the same thing here.  
-
+					output logic            encdone,  //enc and dec appear to be the same thing here.  
+					output logic 						sqzdone
+					
 				);
 
 				/* The Keyed mode encryption is defined in section 1.2.2 of "Xoodyak, a lightweight
@@ -34,10 +37,64 @@
 					 Crypt(textin)  //Note: the encrypt and decrypt functions are the same
 					 Squeeze(state) //The squeeze function generates a 128' authentication tag
 					 
-					 All function calls require a permute() function. */  
+					 All function calls except Cyclist call the Up() function, which includes the permute. 
+					 
+					 
+								//----------------------------------------------------------------
+								//Technical briefing on XOODYAK
+								//----------------------------------------------------------------								
+							
+					 Important information:
+					 >This technical briefing describes the intended operation of this module.  It has been thoroughly vetted.  
+					  In the event of a conflict between these comments and actual operation, the comments are supreme and the HDL code is implemented incorrectly. 
+					 >This technical briefing describes the intended operation of this module.  In the event of a conflict between
+					  these comments and the technical description, "Xoodyak, a Lightweight Encryption Scheme" submitted to NIST by Keccak, the 
+						standard is supreme and the implementation is incorrect, although the Keccak team may wish to consider it independently.  
+					 >The user is NOT required to supply registered inputs, this is handled internally.
+					 >The user may cancel an encipher by supplying another ready signal, which will encypher the existing inputs.  
+					 >Xoodyak does not recognize a difference between cipher and decypher functions.  "encrypting" the ciphertext output as
+					  the input plaintext will yield the ciphertext, provided the correct key and nonce is used to initialize the state.  
+					 >This file occassionally refers to "plaintext" and "ciphertext." In these instances, "plaintext" is always the input, and
+						"ciphertext" is always the output, even though ciphertext can be re-encyphered to plaintext.  
+					 >The reset flag zeroes out the permute to kill the state. 
+					 
+					 Xoodyak requires:
+					 >The user must continuously assert (1 or 0) start and reset signals.  
+					 >The user's inputs must be synchronized with the start signal.
+					 >The user may not interrupt a cipher operation.  No inputs are accepted until after the machine returns to the idle state.  
+						
+						
+						Xoodyak produces:
+						>A 192 bit ciphertext
+						>A 128 bit authentication data
+						>A flag to synchronize ciphertext validity.  As written, the ciphertext is valid from the time of the pulse encdone flag until a reset or start occurs.
+							This property allows for ciphertext and authdata to be read synchronously, or asynchronously if the user wants the ciphertext a clock cycle earlier.  
+						>A flag to synchronize authdata validity.  As written, the authdata output is valid from the time of the pulse sqzdone flag until another reset or start occurs.
+												
+					 
+					 */  
 	
-				logic [383:0] state_initial, state_nonce, state_asso_in, state_asso ;
-				logic    nonce_done, auth_start;
+			
+						//----------------------------------------------------------------
+						//XOODYAK's governing Finite State Machine  
+						//----------------------------------------------------------------
+				logic sm_idle, sm_start, sm_run, sm_cryp_finish, sm_sqz_finish, sm_idle_next, sm_start_next, sm_run_next, sm_cryp_finish_next, sm_sqz_finish_next;
+				
+				rregs #(1) smir (sm_idle,   ~reset & sm_idle_next,   eph1);
+				rregs #(1) smsr (sm_start,  ~reset & sm_start_next,  eph1);
+				rregs #(1) smrr (sm_run,    ~reset & sm_run_next,    eph1);
+				rregs #(1) smcr (sm_cryp_finish, ~reset & sm_cryp_finish_next, eph1);
+				rregs #(1) smsq (sm_sqz_finish, ~reset & sm_sqz_finish_next, eph1);
+					
+				assign sm_start_next        =  start & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish ;//Once started, a run cannot be modified.
+				assign sm_run_next          =  (~sm_start_next) & (sm_start | (sm_run & ~encdone));  
+				assign sm_cryp_finish_next  =  (~sm_start_next) & sm_run & encdone;
+				assign sm_sqz_finish_next		=  (~sm_start_next) & sm_cryp_finish & sqzdone; 
+				assign sm_idle_next         =  (~sm_start_next  & ~sm_run_next & ~sm_sqz_finish_next & ~sm_cryp_finish_next);
+
+				
+				logic [383:0] state_initial, state_nonce, state_asso_in, state_asso, state_enc_in ;
+				logic    nonce_done, auth_start, crypt_start;
 
 				assign state_initial = {key,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
 				//When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
@@ -47,52 +104,56 @@
 
 					.eph1   			(eph1),
 					.reset  			(reset),
-					.start  			(start),
+					.start  			(sm_start),
 				
 					.state_in 		(state_initial),
-					.extra_data 	(nonce),                 //can be either associated data or the nonce. 
-
+					.extra_data 	(nonce),              
+					
 					.state_out 		(state_nonce),
 					.absorb_done 	(nonce_done)
 
 				);
 				
-				rregs #(384) absnonc ( state_asso_in, state_nonce, eph1);
+				assign state_asso_in = state_nonce;
+				assign auth_start = nonce_done; 
 
 				absorb absorbauthdata(
 					.eph1   			(eph1),
 					.reset  			(reset),
-					.start  			(nonce_done),
+					.start  			(auth_start),
 				
 					.state_in 		(state_asso_in),
-					.extra_data 	(assodata),                 //can be either associated data or the nonce. 
+					.extra_data 	(assodata),                  
 
 					.state_out 		(state_asso),
 					.absorb_done 	(asso_done)
 
 				);
+				
+				assign state_enc_in = state_asso;
+				assign crypt_start = asso_done; 
 					
-					logic [383:0] state_enc_in;
-				rregs #(384) endabs ( state_enc_in, state_asso, eph1);
-
 				crypt encrypt(
 					.eph1 				(eph1),
 					.reset 				(reset),
-					.start 				(asso_done),
+					.start 				(crypt_start),
 					
 					.state 				(state_enc_in),
 					.cryptin 		  (textin),
 					
-					.cryptout 	  (textout), //from the encrypt modules  (output pin to top)
-					.authdata   	(authdata),  //from the encrypt modules (output pin to top)
-					.encdone    	(encdone)
+					.cryptout 	  (textout), 
+					.authdata   	(authdata), 
+					.encdone    	(encdone),
+					.sqzdone 			(sqzdone)
 				); 
 				
 				logic [191:0] dectestvec;
 				logic [127:0] authdata_dec;
 	      logic encdone_dec;
 				
-				crypt decryptinst(
+				
+				
+/* 				crypt decryptinst(
 				
 					.eph1 				(eph1),
 					.reset 				(reset),
@@ -104,11 +165,11 @@
 					.cryptout 	  (dectestvec), //from the encrypt modules  (output pin to top)
 					.authdata   	(authdata_dec),  //from the encrypt modules (output pin to top)
 					.encdone    	(encdone_dec)
-				);
+				); */
 				
 				
 
-				endmodule: xoodyaktop
+				endmodule: xoodyak
 
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -124,7 +185,8 @@
 						
 						output logic [191:0] cryptout,
 						output logic [127:0] authdata,
-						output logic         encdone
+						output logic         encdone,
+						output logic 				 sqzdone
 
 				);
 				
@@ -135,10 +197,12 @@
 				
 				logic [383:0] state_enc,enc_permd;
 				logic encpermflag;
+        
+				//Applies the UP() function to the input state, which functionally
+				//XORs 8'h8 to the LSB.  
+				assign state_enc = {state[383:8],~state[7],state[6:0]};  
 
-				assign state_enc = {state[383:8],~state[7],state[6:0]}; //XORS domain value 0x80 with the state upon start of encrytion. 
-
-					permute encperm (  //May only need one set of permute hardware.  It may operate  asynchronously from the clock.  
+					permute encperm (
 							.eph1           (eph1),
 							.reset          (reset),
 							.start          (start),
@@ -146,18 +210,19 @@
 							.state_out      (enc_permd),
 							.xood_done      (encpermflag)
 					);
-
+				assign encdone = encpermflag; 
+				
 				//XORS up to 192' of message with the state.  
 				//assumption: xor'ing with the 192 MSB of the state.
-
 				assign cryptout = cryptin ^ enc_permd[383:192];
-				
 				
 				logic [127:0] final_authtag;
 				
 				logic [383:0] sqz_in, sqz_ciphertext; 
-				assign sqz_ciphertext = {cryptout, enc_permd[191:185], ~enc_permd[184], enc_permd[183:0]};  //a hex 0x01 XOR at the most significant bit after the cryptout.  
-				rregs #(384) encsqz ( sqz_in ,sqz_ciphertext, eph1);
+				//This is another DOWN() function: (Xi||8'h01||'00(extended)||Cd) where Xi is the the Cryptout text and  Cd is 8'h00.  Cd can never be anything other than 8'h0 here.  
+				assign sqz_ciphertext = {cryptout, enc_permd[191:185], ~enc_permd[184], enc_permd[183:0]};  
+				assign sqz_in = sqz_ciphertext; 
+				//rregs #(384) encsqz ( sqz_in ,sqz_ciphertext, eph1);
 				
 			squeeze squeezetag(  //consider making this in the top module.  pass to enc and dec as needed based on the situation.  
 						.eph1 (eph1),
@@ -166,7 +231,7 @@
 						
 						.state   (sqz_in),
 						.authtag ( final_authtag),
-						.sq_done (encdone)//whenever we're done with both generating the cryptout and the authdata
+						.sq_done (sqzdone)//whenever we're done with both generating the cryptout and the authdata
 				
 			 );
 
@@ -200,26 +265,26 @@
 					 the ABSORBANY() function and the DOWN() function is always called, as
 					 DOWN(extra_data,8'h03)
 					 */
-				logic [383:0] perm_out;
-				logic [127:0] state_temp;
-				logic       perm_done;
+						logic [383:0] perm_out;
+						logic [127:0] state_temp;
+						logic       perm_done;
 
-			permute absorbround(
-					.eph1       	(eph1),
-					.reset     		(reset),
-					.start     		(start),
-					.state_in  		(state_in),
-					.state_out 		(perm_out),
-					.xood_done 		(perm_done)
-			);
+					permute absorbround(
+							.eph1       	(eph1),
+							.reset     		(reset),
+							.start     		(start),
+							.state_in  		(state_in),
+							.state_out 		(perm_out),
+							.xood_done 		(perm_done)
+					);
 
-    
-		//For DOWN(extra_data,8'h03)
-		assign state_temp = extra_data^perm_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
-		// perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
-    assign state_out = {state_temp, perm_out[255:249], ~perm_out[248] ,perm_out[247:2], ~perm_out[1:0]};
+				
+				//For DOWN(extra_data,8'h03)
+				assign state_temp = extra_data^perm_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
+				// perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
+				assign state_out = {state_temp, perm_out[255:249], ~perm_out[248] ,perm_out[247:2], ~perm_out[1:0]};
 
-    assign absorb_done = perm_done;
+				assign absorb_done = perm_done;
 
 
     endmodule: absorb
@@ -240,6 +305,9 @@
 			logic [383:0] perm_in, perm_out;
 			logic perm_done;
 
+			//Calls the Squeezeany() function where l is the state and Cu is 8'h40 as defined in
+			// Interface: Y <- Squeeze(state), SqueezeAny(state,'40')
+			// Functionally XORs the Cu value, in this case 8'h40 to the state.  
 			assign perm_in = {state[383:7], ~state[6], state[5:0]}; //computationally finds: 0x40 ^ state;
 
 				permute sqzrnd(
@@ -253,7 +321,10 @@
     
 				);
 
-      assign authtag = perm_out[383:256];//is it 127:0 or 383:255 191
+      //The last line produces a t-byte tag, where t can be specified by the application. A typical
+			//tag length would be t = 16 bytes (128 bits).
+      
+			assign authtag = perm_out[383:256];//is it 127:0 or 383:255 191
 		  assign sq_done = perm_done;
 			
 			endmodule: squeeze
@@ -325,7 +396,7 @@ A running permutation cannot be cancelled and will not accept inputs until it co
         
         //Greek syms.  θ ρwest ι Χ ρeast
         //The CIBOX constants, retained for reference, are: '{ 32'h58, 32'h38, 32'h3c0, 32'hD0, 32'h120, 32'h14, 32'h60, 32'h2c, 32'h380, 32'hF0, 32'h1A0, 32'h12}; 
-rregs #(1) xoodne (xood_done,reset?1'h0:(~xood_done&start),eph1); //This is fake.  I am assuming the entire thing will only take one clock which won't be true.  
+				rregs #(1) xoodne (xood_done,reset?1'h0:(~xood_done&start),eph1); //Critical assumption: the permute function takes exactly one clock.    
       
         logic [383:0]  bits_le;
         assign bits_le = {// So not only is each block of 32' reversed in a 128' double double word, but each 
@@ -1292,11 +1363,13 @@ assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this 
                                   round_out_b[295:288],round_out_b[303:296],round_out_b[311:304],round_out_b[319:312],
                                   round_out_b[263:256],round_out_b[271:264],round_out_b[279:272],round_out_b[287:280]
                                 };
-
-        //Output is registered for timing purposes.  
-        
-  //rregs_en #(384,1) permstate (state_out, perm_reconcat, eph1,start); //Will have to redefine the register when I get a better idea of how it will work. 
-assign state_out = perm_reconcat;
+      
+      //Output is registered for timing purposes.  
+			logic [383:0] reset_long; 
+      assign reset_long = {384{reset}}; 			
+ 			rregs 	 #(1) 		xoodflg (xood_done,~reset&~xood_done&start,eph1);           
+			rregs_en #(384,1) permstate (state_out, ~reset_long&perm_reconcat, eph1,start); 
+			
         endmodule: permute
 
      
