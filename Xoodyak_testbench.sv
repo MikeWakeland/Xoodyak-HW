@@ -56,9 +56,11 @@
 	
 	
 	
-	logic [127:0] authdata_o, textout_o;
-	logic encdone;
-		
+	logic [127:0] authdata_o;
+	logic [191:0] textout_o;
+	logic encdone, sqzdone;
+	logic verif_dec;
+  logic verif_enc;	
 				
 /////////////////////////////////////////////////////End fake input section///////////////////////////////////////////////////////		
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -78,8 +80,11 @@
 				.xood_done 	(xood_done)
 		 );
 		  */
+		 logic [383:0] voiddata;
+		 assign voiddata = '0; 
+		 logic verif_enc, verif_dec;
 		 
-	xoodyaktop testbench(
+	xoodyak testbench_enc(
 			 .eph1 (eph1),
 			 .reset (reset),
 			 .start (start),
@@ -87,14 +92,43 @@
        .textin    (plaintext_t),                                        //Either plain text or cipher text depending on opmode
        .nonce   (nonce_t),
 			 .assodata (asso_data_t),
-       .key      (key_t),
-			.opmode    (opmode),                                   //0 for encryption, 1 for decryption.  
-
+       .key      (key_t),  
+			 .verification_data (verif_enc),
+			 .opmode (1'b0),
+			 
       .authdata (authdata_o),
       .textout  (textout_o),
-			.encdone  (encdone) //enc and dec appear to be the same thing here.  
+			.encdone  (encdone),
+			.sqzdone 	(sqzdone),
+			.verify (verif_enc)
 
     );
+
+logic [127:0] dec_authdata;
+logic [191:0] dec_text;
+logic sqzdone_dec, encdone_dec;
+
+	xoodyak testbench_dec(
+			 .eph1 (eph1),
+			 .reset (reset),
+			 .start (sqzdone),
+			
+       .textin    (textout_o),                                        //Either plain text or cipher text depending on opmode
+       .nonce   (nonce_t),
+			 .assodata (asso_data_t),
+       .key      (key_t),
+			 .verification_data (authdata_o),
+			 .opmode				(1'b1), 
+			 
+      .authdata (dec_authdata),
+      .textout  (dec_text),
+			.encdone  (encdone_dec), //enc and dec appear to be the same thing here.  
+			.sqzdone  (sqzdone_dec),
+			.verify (verif_dec)
+    );
+
+
+
 
 		 
 		 

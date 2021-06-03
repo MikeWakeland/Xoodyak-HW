@@ -12,8 +12,7 @@
           input logic [127:0]     nonce,
           input logic [127:0]     assodata,
           input logic [127:0]     key,
-   			  input logic [127:0]		  verification_data,
-					input logic							opmode,  //the opmode is 1 for decryption and 0 for encryption.  
+   			input logic [127:0]		  verification_data,	
 
           output logic [127:0]    authdata,
           output logic [191:0]    textout,
@@ -49,9 +48,6 @@
            >The user may cancel an encipher by supplying another ready signal, which will encypher the existing inputs.  
            >Xoodyak does not recognize a difference between cipher and decypher functions.  "encrypting" the ciphertext output as
             the input plaintext will yield the ciphertext, provided the correct key and nonce is used to initialize the state.  
-						However, this implementation does feature an encryption/decryption mode.  When the input decryption flag is 0,
-						the squeeze function will generate a tag.  When the decryption flag is 1, the squeeze function will verify the 
-						provided tag/ensure supplied data validation.  
            >This file occassionally refers to "plaintext" and "ciphertext." In these instances, "plaintext" is always the input, and
             "ciphertext" is always the output, even though ciphertext can be re-encyphered to plaintext.  
            >The reset flag zeroes out the permute to kill the state. 
@@ -68,7 +64,7 @@
             >A flag to synchronize ciphertext validity.  As written, the ciphertext is valid from the time of the pulse encdone flag until a reset or start occurs.
               This property allows for ciphertext and authdata to be read synchronously, or asynchronously if the user wants the ciphertext a clock cycle earlier.  
             >A flag to synchronize authdata validity.  As written, the authdata output is valid from the time of the pulse sqzdone flag until another reset or start occurs.
-						>A flag that verifies that a supplied input text is authentic, that is, the encrypted data has not been altered and therefore generates the same squeeze text as the output.  
+>A flag that verifies that a supplied input text is authentic, that is, the encrypted data has not been altered and therefore generates the same squeeze text as the output.  
                         
            
            */  
@@ -94,11 +90,10 @@
         //This section verifies that the squeeze data matches the authentication data supplied at input.  
 			logic [127:0] auth_verification;			
 			rregs_en #(128,1) verif (auth_verification,verification_data, eph1, sm_start_next); 
-				assign verify = &(auth_verification ~^ authdata);
+				assign verify = &(auth_verification ~^ verif_squeeze);
 				
         logic [383:0] state_initial, state_nonce, state_asso_in, state_asso, state_enc_in ;
         logic    nonce_done, auth_start, crypt_start;
-
 
         assign state_initial = {key,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
         //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
@@ -118,8 +113,7 @@
 
         );
         
-				
-				assign state_asso_in = state_nonce;
+        assign state_asso_in = state_nonce;
         assign auth_start = nonce_done; 
 
         absorb absorbauthdata(
@@ -134,48 +128,27 @@
           .absorb_done   (asso_done)
 
         );
-				
-				
-				//----------------------------------------------------------------
-				//XOODYAK's GIMMICK
-				//----------------------------------------------------------------
-        /* This is Xoodyak, except as described in "Xoodyak, an Update"
-				   On page 5.  This "tweak" initializes Xoodyak's state with the nonce 
-					 already absorbed, saving a permute cycle on use.  Similarly, the 
-					 next absorb function takes the authdata which has to be rewired.  
-					 Everything else is exactly the same, uncommenting the state_initial 
-					 assignment below and the absorb authdata module will allow the module
-					 run normally under "gimmick" conditions.  
-					 
-        >note: With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
-				*/
-				
-				/*
-				assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2};
-			
-        absorb absorbauthdata(
-          .eph1         (eph1),
-          .reset        (reset),
-          .start        (sm_start),
         
-          .state_in     (state_initial),
-          .extra_data   (assodata),                  
-
-          .state_out     (state_asso),
-          .absorb_done   (asso_done)
-        ); 
-				*/
-        
-				
-				
         assign state_enc_in = state_asso;
         assign crypt_start = asso_done; 
-
+          
+					logic [127:0] verif_squeeze; 
 					logic auth_sq_done;
 					
-
-				logic [383:0] state_cryptout; 
-									
+				squeeze authentication_sqz (
+				    
+						.eph1  (eph1),
+            .reset (reset),
+            .start (crypt_start),
+            
+            .state   (state_enc_in),
+            .authtag ( verif_squeeze),
+            .sq_done (auth_sq_done)//whenever we're done with both generating the cryptout and the authdata
+				);
+						
+						
+					
+					
         crypt encrypt(
           .eph1         (eph1),
           .reset         (reset),
@@ -184,26 +157,17 @@
           .state         (state_enc_in),
           .cryptin       (textin),
           
-          .stateout     (state_cryptout), 
-          .encdone      (encdone)
+          .cryptout     (textout), 
+          .authdata     (authdata), 
+          .encdone      (encdone),
+          .sqzdone       (sqzdone)
         ); 
         
-				assign textout = state_cryptout[383:192];
+        logic [191:0] dectestvec;
+        logic [127:0] authdata_dec;
+        logic encdone_dec;
+               
 
-				
-				squeeze tag (
-				    
-						.eph1  (eph1),
-            .reset (reset),
-            .start (encdone),
-              
-						.opmode (opmode),
-						.textin (textin),
-            .state   (state_cryptout),
-            .authtag (authdata),
-            .sq_done (sqzdone)//whenever we're done with both generating the cryptout and the authdata
-				);
-				
         endmodule: xoodyak
 
 
@@ -217,9 +181,11 @@
             
             input logic [383:0] state,
             input logic [191:0] cryptin,
-          
-            output logic [383:0] stateout,
-            output logic         encdone
+            
+            output logic [191:0] cryptout,
+            output logic [127:0] authdata,
+            output logic         encdone,
+            output logic          sqzdone
 
         );
         
@@ -247,8 +213,27 @@
         
         //XORS up to 192' of message with the state.  
         //assumption: xor'ing with the 192 MSB of the state.
-        assign stateout = {cryptin^enc_permd[383:192], enc_permd[191:0]};
+        assign cryptout = cryptin ^ enc_permd[383:192];
+        
+        logic [127:0] final_authtag;
+        
+        logic [383:0] sqz_in, sqz_ciphertext; 
+        //This is another DOWN() function: (Xi||8'h01||'00(extended)||Cd) where Xi is the the Cryptout text and  Cd is 8'h00.  Cd can never be anything other than 8'h0 here.  
+        assign sqz_ciphertext = {cryptout, enc_permd[191:185], ~enc_permd[184], enc_permd[183:0]};  
+        assign sqz_in = sqz_ciphertext; 
+        
+      squeeze squeezetag(  //consider making this in the top module.  pass to enc and dec as needed based on the situation.  
+            .eph1 (eph1),
+            .reset (reset),
+            .start (encpermflag),
+            
+            .state   (sqz_in),
+            .authtag ( final_authtag),
+            .sq_done (sqzdone)//whenever we're done with both generating the cryptout and the authdata
+        
+       );
 
+    assign authdata   = final_authtag;
     
     endmodule: crypt 
 
@@ -308,31 +293,39 @@
         input logic              eph1,
         input logic              reset, 
         input logic              start,
+
         input logic  [383:0]     state,
-				input logic							 opmode, 
-				input logic [191:0] 		 textin, 
         
-				output logic [127:0]     authtag,
+        output logic [127:0]     authtag,
         output logic             sq_done
+
       );
-			
       logic [383:0] perm_in, perm_out;
       logic perm_done;
 
-        logic [127:0] final_authtag;
-        
-        logic [383:0] sqz_in, sqz_ciphertext; 
-      //This is another DOWN() function: (Xi||8'h01||'00(extended)||Cd) where Xi is the the Cryptout text and  Cd is 8'h00.  Cd can never be anything other than 8'h0 here.  
-			//The Xi was already added in the crytpo module when we XOR'd the input text.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       //Calls the Squeezeany() function where l is the state and Cu is 8'h40 as defined in
       // Interface: Y <- Squeeze(state), SqueezeAny(state,'40')
       // Functionally XORs the Cu value, in this case 8'h40 to the state.  
-
-      logic [191:0] perm_select;
-			assign perm_select = opmode ? textin : state[383:192]; 
-
-			assign perm_in = {perm_select, state[191:185] , ~state[184], state[183:7], ~state[6], state[5:0]};  
-
+      assign perm_in = {state[383:7], ~state[6], state[5:0]}; //computationally finds: 0x40 ^ state;
 
         permute sqzrnd(
     
@@ -348,7 +341,7 @@
       //The last line produces a t-byte tag, where t can be specified by the application. A typical
       //tag length would be t = 16 bytes (128 bits).
       
-      assign authtag = perm_out[383:256];
+      assign authtag = perm_out[383:256];//is it 127:0 or 383:255 191
       assign sq_done = perm_done;
       
       endmodule: squeeze

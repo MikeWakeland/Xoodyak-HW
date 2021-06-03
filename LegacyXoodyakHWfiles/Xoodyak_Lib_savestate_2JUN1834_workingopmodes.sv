@@ -99,7 +99,6 @@
         logic [383:0] state_initial, state_nonce, state_asso_in, state_asso, state_enc_in ;
         logic    nonce_done, auth_start, crypt_start;
 
-
         assign state_initial = {key,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
         //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
         //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
@@ -118,8 +117,7 @@
 
         );
         
-				
-				assign state_asso_in = state_nonce;
+        assign state_asso_in = state_nonce;
         assign auth_start = nonce_done; 
 
         absorb absorbauthdata(
@@ -134,40 +132,7 @@
           .absorb_done   (asso_done)
 
         );
-				
-				
-				//----------------------------------------------------------------
-				//XOODYAK's GIMMICK
-				//----------------------------------------------------------------
-        /* This is Xoodyak, except as described in "Xoodyak, an Update"
-				   On page 5.  This "tweak" initializes Xoodyak's state with the nonce 
-					 already absorbed, saving a permute cycle on use.  Similarly, the 
-					 next absorb function takes the authdata which has to be rewired.  
-					 Everything else is exactly the same, uncommenting the state_initial 
-					 assignment below and the absorb authdata module will allow the module
-					 run normally under "gimmick" conditions.  
-					 
-        >note: With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
-				*/
-				
-				/*
-				assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2};
-			
-        absorb absorbauthdata(
-          .eph1         (eph1),
-          .reset        (reset),
-          .start        (sm_start),
         
-          .state_in     (state_initial),
-          .extra_data   (assodata),                  
-
-          .state_out     (state_asso),
-          .absorb_done   (asso_done)
-        ); 
-				*/
-        
-				
-				
         assign state_enc_in = state_asso;
         assign crypt_start = asso_done; 
 
