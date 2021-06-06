@@ -21,7 +21,7 @@
 			end			
 
 		int random_num;
-		logic start, reset, reset_r;
+		logic start, reset;
 		initial begin
 				reset  = 1;
 				$display("Starting Proc Simulation");

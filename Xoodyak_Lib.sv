@@ -6,20 +6,20 @@
         module xoodyak(
           input logic             eph1,
           input logic             reset,
-          input logic              start,
+          input logic             start,
           
           input logic [191:0]     textin,  //Either plain text or cipher text depending on opmode
           input logic [127:0]     nonce,
           input logic [127:0]     assodata,
           input logic [127:0]     key,
-           input logic [127:0]      verification_data,
-          input logic              opmode,  //the opmode is 1 for decryption and 0 for encryption.  
+          input logic [127:0]     verification_data,
+          input logic             opmode,  //the opmode is 1 for decryption and 0 for encryption.  
 
           output logic [127:0]    authdata,
           output logic [191:0]    textout,
           output logic            encdone,  //enc and dec appear to be the same thing here.  
           output logic            sqzdone, 
-        output logic            verify
+          output logic            verify
           
         );
 
@@ -73,34 +73,69 @@
            
            */  
   
+            //----------------------------------------------------------------
+            //Register Xoodyak's inputs.  
+            //----------------------------------------------------------------
+  
+    logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
+    logic [127:0]     nonce_r, assodata_r, key_r, verification_data_r;
+    logic             opmode_r, start_r;  //the opmode is 1 for decryption and 0 for encryption.  
+  
+  rregs #(192) txtr  ( textin_r, textin, eph1);
+  rregs #(128) noncr ( nonce_r, nonce, eph1);
+  rregs #(128) assodr( assodata_r, assodata, eph1);
+  rregs #(128) keyr  ( key_r, key, eph1);
+  rregs #(1)   opmdr (opmode_r, opmode, eph1); 
+  rregs #(1) strtr (start_r, start, eph1);
+  
+  
+  
+  
+  
       
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //----------------------------------------------------------------
         logic sm_idle, sm_start, sm_run, sm_cryp_finish, sm_sqz_finish, sm_idle_next, sm_start_next, sm_run_next, sm_cryp_finish_next, sm_sqz_finish_next;
-        
-        rregs #(1) smir (sm_idle,   ~reset & sm_idle_next,   eph1);
+   
+
+      assign sm_start       = start & ~reset & (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish);
+      assign sm_run         = ~reset & (start_r | nonce_done | asso_done) ;
+      assign sm_cryp_finish = ~reset & encdone; 
+      assign sm_sqz_finish  = ~reset & sqzdone; 
+      assign sm_idle = reset | (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish) ;
+
+
+ 
+/*         rregs #(1) smir (sm_idle,   ~reset & sm_idle_next,   eph1);
         rregs #(1) smsr (sm_start,  ~reset & sm_start_next,  eph1);
         rregs #(1) smrr (sm_run,    ~reset & sm_run_next,    eph1);
         rregs #(1) smcr (sm_cryp_finish, ~reset & sm_cryp_finish_next, eph1);
         rregs #(1) smsq (sm_sqz_finish, ~reset & sm_sqz_finish_next, eph1);
           
-        assign sm_start_next        =  start & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish ;//Once started, a run cannot be modified.
+        assign sm_start_next        =  start_r & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish ;//Once started, a run cannot be modified.
         assign sm_run_next          =  (~sm_start_next) & (sm_start | (sm_run & ~encdone));  
         assign sm_cryp_finish_next  =  (~sm_start_next) & sm_run & encdone;
-        assign sm_sqz_finish_next    =  (~sm_start_next) & sm_cryp_finish & sqzdone; 
+        assign sm_sqz_finish_next   =  (~sm_start_next) & sm_cryp_finish & sqzdone; 
         assign sm_idle_next         =  (~sm_start_next  & ~sm_run_next & ~sm_sqz_finish_next & ~sm_cryp_finish_next);
+ */
+
+
+
+
+
+
 
         //This section verifies that the squeeze data matches the authentication data supplied at input.  
       logic [127:0] auth_verification;      
-      rregs_en #(128,1) verif (auth_verification,verification_data, eph1, sm_start_next); 
+      rregs_en #(128,1) verif (auth_verification,verification_data_r, eph1, sm_start_next); 
         assign verify = &(auth_verification ~^ authdata);
         
         logic [383:0] state_initial, state_nonce, state_asso_in, state_asso, state_enc_in ;
         logic    nonce_done, auth_start, crypt_start;
 
 
-        assign state_initial = {key,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
+        assign state_initial = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
         //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
         //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
         
@@ -108,10 +143,10 @@
 
           .eph1         (eph1),
           .reset        (reset),
-          .start        (sm_start),
+          .start        (start_r),
         
           .state_in     (state_initial),
-          .extra_data   (nonce),              
+          .extra_data   (nonce_r),              
           
           .state_out     (state_nonce),
           .absorb_done   (nonce_done)
@@ -128,7 +163,7 @@
           .start        (auth_start),
         
           .state_in     (state_asso_in),
-          .extra_data   (assodata),                  
+          .extra_data   (assodata_r),                  
 
           .state_out     (state_asso),
           .absorb_done   (asso_done)
@@ -159,7 +194,7 @@
           .start        (sm_start),
         
           .state_in     (state_initial),
-          .extra_data   (assodata),                  
+          .extra_data   (assodata_r),                  
 
           .state_out     (state_asso),
           .absorb_done   (asso_done)
@@ -182,7 +217,7 @@
           .start         (crypt_start),
           
           .state         (state_enc_in),
-          .cryptin       (textin),
+          .cryptin       (textin_r),
           
           .stateout     (state_cryptout), 
           .encdone      (encdone)
@@ -197,8 +232,8 @@
             .reset (reset),
             .start (encdone),
               
-            .opmode (opmode),
-            .textin (textin),
+            .opmode (opmode_r),
+            .textin (textin_r),
             .state   (state_cryptout),
             .authtag (authdata),
             .sq_done (sqzdone)//whenever we're done with both generating the cryptout and the authdata
@@ -1376,11 +1411,9 @@ assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this 
                                   round_out_b[263:256],round_out_b[271:264],round_out_b[279:272],round_out_b[287:280]
                                 };
       
-      //Output is registered for timing purposes.  
-      logic [383:0] reset_long; 
-      assign reset_long = {384{reset}};       
-       rregs    #(1)     xoodflg (xood_done,~reset&~xood_done&start,eph1);           
-      rregs_en #(384,1) permstate (state_out, ~reset_long&perm_reconcat, eph1,start); 
+      //Output is registered for timing purposes.       
+       rregs    #(1)     xoodflg (xood_done,~reset&start,eph1);           
+      rregs_en #(384,1) permstate (state_out, reset ? '0 : perm_reconcat, eph1,start); 
       
         endmodule: permute
 
