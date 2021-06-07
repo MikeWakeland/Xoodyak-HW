@@ -55,6 +55,8 @@
            >This file occassionally refers to "plaintext" and "ciphertext." In these instances, "plaintext" is always the input, and
             "ciphertext" is always the output, even though ciphertext can be re-encyphered to plaintext.  
            >The reset flag zeroes out the permute to kill the state. 
+					 >All inputs are registered.
+					 >All outputs are registered, **except textout which incurs exactly a one XOR gate delay between the register and the output pin.**  
            
            Xoodyak requires:
            >The user must continuously assert (1 or 0) start and reset signals.  
@@ -77,16 +79,16 @@
             //Register Xoodyak's inputs.  
             //----------------------------------------------------------------
   
-    logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
-    logic [127:0]     nonce_r, assodata_r, key_r, verification_data_r;
-    logic             opmode_r, start_r;  //the opmode is 1 for decryption and 0 for encryption.  
-  
-  rregs #(192) txtr  ( textin_r, textin, eph1);
-  rregs #(128) noncr ( nonce_r, nonce, eph1);
-  rregs #(128) assodr( assodata_r, assodata, eph1);
-  rregs #(128) keyr  ( key_r, key, eph1);
-  rregs #(1)   opmdr (opmode_r, opmode, eph1); 
-  rregs #(1) strtr (start_r, start, eph1);
+          logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
+          logic [127:0]     nonce_r, assodata_r, key_r, verification_data_r;
+          logic             opmode_r, start_r;  //the opmode is 1 for decryption and 0 for encryption.  
+        
+        rregs #(192) txtr  ( textin_r, textin, eph1);
+        rregs #(128) noncr ( nonce_r, nonce, eph1);
+        rregs #(128) assodr( assodata_r, assodata, eph1);
+        rregs #(128) keyr  ( key_r, key, eph1);
+        rregs #(1)   opmdr (opmode_r, opmode, eph1); 
+        rregs #(1)   strtr (start_r, start, eph1);
   
   
   
@@ -96,14 +98,15 @@
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //----------------------------------------------------------------
-        logic sm_idle, sm_start, sm_run, sm_cryp_finish, sm_sqz_finish, sm_idle_next, sm_start_next, sm_run_next, sm_cryp_finish_next, sm_sqz_finish_next;
-   
+          logic sm_idle, sm_start, sm_run, sm_cryp_finish, sm_sqz_finish; //sm_idle_next, sm_start_next, sm_run_next, sm_cryp_finish_next, sm_sqz_finish_next;
+     
+     
+        assign sm_idle =         reset | (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish) ;
+        assign sm_start       =  start & ~reset & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish;  //sm_start cannot raise if we are in any state other than idle.  
+        assign sm_run         = ~reset & (start_r | nonce_done | asso_done) ;
+        assign sm_cryp_finish = ~reset & encdone; 
+        assign sm_sqz_finish  = ~reset & sqzdone; 
 
-      assign sm_start       = start & ~reset & (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish);
-      assign sm_run         = ~reset & (start_r | nonce_done | asso_done) ;
-      assign sm_cryp_finish = ~reset & encdone; 
-      assign sm_sqz_finish  = ~reset & sqzdone; 
-      assign sm_idle = reset | (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish) ;
 
 
  
@@ -281,7 +284,7 @@
         assign encdone = encpermflag; 
         
         //XORS up to 192' of message with the state.  
-        //assumption: xor'ing with the 192 MSB of the state.
+        //This XOR is an output, meaning that there is an XOR gate between the register and output wires.  
         assign stateout = {cryptin^enc_permd[383:192], enc_permd[191:0]};
 
     
