@@ -66,7 +66,19 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+/* 
+	 xooround execute (
+	 
+				.eph1				(eph1),
+				.reset      (reset),
 
+				.start      (start),
+				.state_in  (state_in), 
+				.state_out 	(state_out),
+				
+				.xood_done 	(xood_done)
+		 );
+		  */
 		 logic [383:0] voiddata;
 		 assign voiddata = '0; 
 		 logic verif_enc, verif_dec;

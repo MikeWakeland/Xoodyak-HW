@@ -1,5 +1,5 @@
 //The start flags don't actually do anything.  Instead wires propogate directly from one stage to the next.  
-//[X] Take a look to see if the FSM should be used more functionally.  It's kind of decorative.
+//[ ] Take a look to see if the FSM should be used more functionally.  It's kind of decorative.
 //[ ] Look for dead code.
 //[ ] Perform final algorithm validation.  
 
@@ -55,8 +55,8 @@
            >This file occassionally refers to "plaintext" and "ciphertext." In these instances, "plaintext" is always the input, and
             "ciphertext" is always the output, even though ciphertext can be re-encyphered to plaintext.  
            >The reset flag zeroes out the permute to kill the state. 
-           >All inputs are registered.
-           >All outputs are registered, **except textout which incurs exactly a one XOR gate delay between the register and the output pin.**  
+					 >All inputs are registered.
+					 >All outputs are registered, **except textout which incurs exactly a one XOR gate delay between the register and the output pin.**  
            
            Xoodyak requires:
            >The user must continuously assert (1 or 0) start and reset signals.  
@@ -75,22 +75,6 @@
            
            */  
   
-
-  
-      
-            //----------------------------------------------------------------
-            //XOODYAK's governing Finite State Machine  
-            //----------------------------------------------------------------
-          logic sm_idle, sm_start, sm_run, sm_cryp_finish, sm_sqz_finish; 
-     
-     
-        assign sm_idle =         reset | (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish) ;
-        assign sm_start       =  start & ~reset & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish;  //sm_start cannot raise if we are in any state other than idle.  
-        assign sm_run         = ~reset & (start_r | nonce_done | asso_done) ;
-        assign sm_cryp_finish = ~reset & encdone; 
-        assign sm_sqz_finish  = ~reset & sqzdone; 
-        
-        
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  
             //----------------------------------------------------------------
@@ -98,21 +82,56 @@
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     nonce_r, assodata_r, key_r, verification_data_r;
           logic             opmode_r, start_r;  //the opmode is 1 for decryption and 0 for encryption.  
-  
-        //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
-        rregs_en #(192,1) txtr  ( textin_r, textin, eph1, sm_start);
-        rregs_en #(128,1) vrfr  (verification_data_r, verification_data,eph1, sm_start); 
-        rregs_en #(128,1) noncr ( nonce_r, nonce, eph1, sm_start);
-        rregs_en #(128,1) assodr( assodata_r, assodata, eph1, sm_start);
-        rregs_en #(128,1) keyr  ( key_r, key, eph1, sm_start);
-        rregs_en #(1,1)   opmdr (opmode_r, opmode, eph1, sm_start); 
+        
+        rregs #(192) txtr  ( textin_r, textin, eph1);
+        rregs #(128) noncr ( nonce_r, nonce, eph1);
+        rregs #(128) assodr( assodata_r, assodata, eph1);
+        rregs #(128) keyr  ( key_r, key, eph1);
+        rregs #(1)   opmdr (opmode_r, opmode, eph1); 
         rregs #(1)   strtr (start_r, start, eph1);
   
+  
+  
+  
+  
+      
+            //----------------------------------------------------------------
+            //XOODYAK's governing Finite State Machine  
+            //----------------------------------------------------------------
+          logic sm_idle, sm_start, sm_run, sm_cryp_finish, sm_sqz_finish; //sm_idle_next, sm_start_next, sm_run_next, sm_cryp_finish_next, sm_sqz_finish_next;
+     
+     
+        assign sm_idle =         reset | (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish) ;
+        assign sm_start       =  start & ~reset & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish;  //sm_start cannot raise if we are in any state other than idle.  
+        assign sm_run         = ~reset & (start_r | nonce_done | asso_done) ;
+        assign sm_cryp_finish = ~reset & encdone; 
+        assign sm_sqz_finish  = ~reset & sqzdone; 
+
+
+
+ 
+/*         rregs #(1) smir (sm_idle,   ~reset & sm_idle_next,   eph1);
+        rregs #(1) smsr (sm_start,  ~reset & sm_start_next,  eph1);
+        rregs #(1) smrr (sm_run,    ~reset & sm_run_next,    eph1);
+        rregs #(1) smcr (sm_cryp_finish, ~reset & sm_cryp_finish_next, eph1);
+        rregs #(1) smsq (sm_sqz_finish, ~reset & sm_sqz_finish_next, eph1);
+          
+        assign sm_start_next        =  start_r & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish ;//Once started, a run cannot be modified.
+        assign sm_run_next          =  (~sm_start_next) & (sm_start | (sm_run & ~encdone));  
+        assign sm_cryp_finish_next  =  (~sm_start_next) & sm_run & encdone;
+        assign sm_sqz_finish_next   =  (~sm_start_next) & sm_cryp_finish & sqzdone; 
+        assign sm_idle_next         =  (~sm_start_next  & ~sm_run_next & ~sm_sqz_finish_next & ~sm_cryp_finish_next);
+ */
+
+
+
+
+
 
 
         //This section verifies that the squeeze data matches the authentication data supplied at input.  
-        logic [127:0] auth_verification;      
-        rregs_en #(128,1) verif (auth_verification,verification_data_r, eph1, sm_start); 
+      logic [127:0] auth_verification;      
+      rregs_en #(128,1) verif (auth_verification,verification_data_r, eph1, sm_start_next); 
         assign verify = &(auth_verification ~^ authdata);
         
         logic [383:0] state_initial, state_nonce, state_asso_in, state_asso, state_enc_in ;
@@ -123,7 +142,7 @@
         //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
         //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
         
-         absorb absorbnonce(
+        absorb absorbnonce(
 
           .eph1         (eph1),
           .reset        (reset),
@@ -153,7 +172,7 @@
           .absorb_done   (asso_done)
 
         );
-         
+        
         
         //----------------------------------------------------------------
         //XOODYAK's GIMMICK
@@ -169,28 +188,24 @@
         >note: With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
         */
         
-        /*         
-        assign state_initial = {key_r,nonce_r,8'h10,8'h01, 104'h0, 8'h2};
-
+        /*
+        assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2};
+      
         absorb absorbauthdata(
           .eph1         (eph1),
           .reset        (reset),
-          .start        (start_r),
+          .start        (sm_start),
         
           .state_in     (state_initial),
           .extra_data   (assodata_r),                  
 
           .state_out     (state_asso),
           .absorb_done   (asso_done)
-        );
-        assign nonce_done = asso_done; //for FSM continuity purposes.      
+        ); 
         */
         
-        //----------------------------------------------------------------
-        //End of GIMMICK
-        //---------------------------------------------------------------- 
-
-
+        
+        
         assign state_enc_in = state_asso;
         assign crypt_start = asso_done; 
 
