@@ -157,9 +157,9 @@
         
         //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
         rregs_en #(192,1) txtr  ( textin_r           , textin            , eph1, sm_start_next);
-        rregs_en #(128,1) vrfr  (verification_data_r, verification_data  , eph1, sm_start_next); 
+        rregs_en #(128,1) vrfr  (verification_data_r , verification_data  , eph1, sm_start_next); 
         rregs_en #(128,1) noncr ( nonce_r            , nonce              , eph1, sm_start_next);
-        rregs_en #(128,1) assodr( assodata_r        , assodata          , eph1, sm_start_next);
+        rregs_en #(128,1) assodr( assodata_r         , assodata          , eph1, sm_start_next);
         rregs_en #(128,1) keyr  ( key_r              , key                , eph1, sm_start_next);
         rregs_en #(1,1)   opmdr (opmode_r            , opmode            , eph1, sm_start_next); 
 
