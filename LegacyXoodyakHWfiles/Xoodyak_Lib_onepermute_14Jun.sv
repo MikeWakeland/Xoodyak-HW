@@ -141,7 +141,7 @@
             //----------------------------------------------------------------   
     
           assign sqzdone = sm_finish; 
-          rregs #(1) encflg (encdone, ~reset&sm_enc&op_switch_next, eph1);
+          rregs #(1) encflg (encdone, ~reset&sm_enc&(perm_ctr==op_switch_next), eph1);
    
 
 
