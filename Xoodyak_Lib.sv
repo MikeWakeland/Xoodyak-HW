@@ -169,7 +169,7 @@
         >note: With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
         */
         
-        /*         
+/*                 
         assign state_initial = {key_r,nonce_r,8'h10,8'h01, 104'h0, 8'h2};
 
         absorb absorbauthdata(

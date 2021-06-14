@@ -46,7 +46,7 @@
             these comments and the technical description, "Xoodyak, a Lightweight Encryption Scheme" submitted to NIST by Keccak, the 
             standard is supreme and the implementation is incorrect, although the Keccak team may wish to consider it independently.  
            >The user is NOT required to supply registered inputs, this is handled internally.
-           >The user may NOT cancel an encipher by supplying another ready signal.  The cipher must run to completion, unless reset is asserted as 1.   
+           >The user may cancel an encipher by supplying another ready signal, which will encypher the existing inputs.  
            >Xoodyak does not recognize a difference between cipher and decypher functions.  "encrypting" the ciphertext output as
             the input plaintext will yield the ciphertext, provided the correct key and nonce is used to initialize the state.  
             However, this implementation does feature an encryption/decryption mode.  When the input decryption flag is 0,
@@ -58,15 +58,6 @@
            >All inputs are registered.
            >All outputs are registered, **except textout which incurs exactly a one XOR gate delay between the register and the output pin.**  
            
-           Gimmick mode:
-           >Gimmick mode is a special state to handle short messages.  In order to enter Gimmick mode, change the following variables as described in the body:
-           rmuxdx_X permin
-           state_in
-           state_ctr_init
-           rregs smno
-           sm_nonce_next
-           sm_asso_next
-           
            Xoodyak requires:
            >The user must continuously assert (1 or 0) start and reset signals.  
            >The user's inputs must be synchronized with the start signal.
@@ -76,9 +67,9 @@
             Xoodyak produces:
             >A 192 bit ciphertext
             >A 128 bit authentication data
-            >A flag to synchronize ciphertext validity. The ciphertext is only valid on the same clock as the encdone flag.
-            >A flag to synchronize authdata validity.  The authdata is only valid on the same clock as the sqzdone flag. 
-            **Caution!  ciphertext and authdata cannot be synchronized due to the nature of the algorithm.  Their offset is exatly the length of one permute function in clocks.**
+            >A flag to synchronize ciphertext validity.  As written, the ciphertext is valid from the time of the pulse sqz_op flag until a reset or start occurs.
+              This property allows for ciphertext and authdata to be read synchronously, or asynchronously if the user wants the ciphertext a clock cycle earlier.  
+            >A flag to synchronize authdata validity.  As written, the authdata output is valid from the time of the pulse sqzdone flag until another reset or start occurs.
             >A flag that verifies that a supplied input text is authentic, that is, the encrypted data has not been altered and therefore generates the same squeeze text as the output.  
                         
            
@@ -87,130 +78,130 @@
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //----------------------------------------------------------------
-        logic                    sm_idle,  sm_start, sm_run, sm_finish, sm_idle_next, sm_start_next,  sm_nonce_next, op_switch_next,
-                                 sm_nonce , sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run;
+/* 											
+          logic sm_idle, sm_start, sm_run, sm_cryp_finish, sm_sqz_finish; 
+        logic [4:0] ctr_out, ctr_in;  
+        logic asso_op, enc_op; 
+        assign asso_op = (ctr_in == 5'h2);
+        assign enc_op  = (ctr_in == 5'h4);
+        assign sqz_op    = (ctr_in == 5'h8);
+        assign sqzdone    = (ctr_in == 5'h10);
+
+
+
+        assign sm_idle =         reset | (~sm_run & ~sm_cryp_finish & ~sm_sqz_finish) ;
+        assign sm_start       =  start & ~reset & ~sm_run & ~sm_cryp_finish & ~sm_sqz_finish;  //sm_start cannot raise if we are in any state other than idle.  
+        assign sm_run         = ~reset & (start_r | asso_op | enc_op) ;
+        assign sm_cryp_finish = ~reset & sqz_op; 
+        assign sm_sqz_finish  = ~reset & sqzdone; 
+				
+				 */
+// AES FSM
+        //------------------------------------------------------------------------------------------------------------------
+        logic                    sm_idle,  sm_start, sm_run, sm_finish, 
+                                 sm_idle_next, sm_start_next, sm_run_next, sm_finish_next;
         logic   [127:0]          plain_text_r, round_recycle, round_key;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
 
-
-        assign run = sm_nonce | sm_asso | sm_enc | sm_sqz;
         //FSM
-        assign sm_start_next  =  start & sm_idle;        
-        assign sm_nonce_next  = (~sm_start_next) & (                     sm_start | (sm_nonce & ~op_switch_next));  //Commented when in Gimmick mode. 
-//      assign sm_asso_next  =  (~sm_start_next) & (                     sm_start | (sm_asso  & ~op_switch_next));  //Commented when in Traditional mode.         
-        assign sm_asso_next   = (~sm_start_next) & (  (sm_nonce & op_switch_next) | (sm_asso  & ~op_switch_next));  //Commented when in Gimmick mode.  
-        assign sm_enc_next    = (~sm_start_next) & (  (sm_asso  & op_switch_next) | (sm_enc   & ~op_switch_next));
-        assign sm_sqz_next    = (~sm_start_next) & (  (sm_enc   & op_switch_next) | (sm_sqz   & ~op_switch_next));        
-        assign sm_finish_next = (~sm_start_next) & (   sm_sqz   & op_switch_next);
-        assign sm_idle_next   = (~sm_start_next) & (   sm_finish| sm_idle);
+        assign sm_start_next    =  start & ~sm_run & ~sm_finish;        
+        assign sm_run_next      = (~sm_start_next) & (sm_start | (sm_run & ~(sqz_op & op_switch_next)));
+        assign sm_finish_next   = (~sm_start_next) &  sm_run & (sqz_op & op_switch_next);
+        assign sm_idle_next     = (~sm_start_next  & ~sm_run_next & ~sm_finish_next);
         
-        
-        rregs #(1) smir (sm_idle,    reset | sm_idle_next,   eph1);
+
+        rregs #(1) smir (sm_idle,   ~reset & sm_idle_next,   eph1);
         rregs #(1) smsr (sm_start,  ~reset & sm_start_next,  eph1);
-        rregs #(1) smno (sm_nonce,  ~reset & sm_nonce_next,  eph1); //Commented when in Gimmick mode.  
-        rregs #(1) smas (sm_asso,   ~reset & sm_asso_next,   eph1);
-        rregs #(1) smen (sm_enc,    ~reset & sm_enc_next,    eph1);
-        rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
+        rregs #(1) smrr (sm_run,    ~reset & sm_run_next,    eph1);
         rregs #(1) smfr (sm_finish, ~reset & sm_finish_next, eph1);
         
-   
-            //----------------------------------------------------------------
-            //State Counters.  Counts how many clocks remain before a state change. 
-            //----------------------------------------------------------------   
-          
-          logic [2:0] perm_ctr,  perm_ctr_next,  state_ctr, state_ctr_next, perm_init, state_ctr_init; 
-          
-          //The initial counter values change based on how many clocks it takes to perform a permute,
-          //And whether the "gimmick" is active.  If the "gimmick" is active, state_ctr_init is 3 instead of 4.  
-          //perm_ctr counts how many clocks until a state change.
-          //state_ctr counts how many state changes remain in an operation. 
-          
-          assign perm_init = 3'h3;   
-           assign state_ctr_init = 3'h4;
-          assign op_switch_next = (perm_ctr == 3'h0);
-            
-          assign perm_ctr_next = perm_ctr - 1; 
-          rregs #(3) permc (perm_ctr, (reset | sm_start |(op_switch_next)) ? perm_init : perm_ctr_next, eph1);  
+     //Counter section.
+		 logic [2:0] perm_ctr,  perm_ctr_next;
+		 logic [2:0] state_ctr, state_ctr_next; 
+		 
+		assign perm_ctr_next = perm_ctr - 1; 
 
-          assign state_ctr_next = sm_start ? state_ctr_init : (   (op_switch_next) ? (state_ctr - 1) : state_ctr ) ; 
-          rregs #(3) statect (state_ctr, (reset | (sm_idle & ~sm_start)) ? 3'h0 : state_ctr_next, eph1 );  
-          
+ //The initial value will change based on how many clocks long permute is. 
+                                //The value is (clocks - 1) and is here v 
+	
+  logic [2:0] perm_init;
+   assign perm_init = 3'h3; 	
+	
+	rregs #(3) permc (perm_ctr, (reset | sm_start |(op_switch_next)) ? perm_init : perm_ctr_next, eph1);	
+	
+	
+	 //The initial value will change based on how many rounds are performed, 5 for regular 4 for gimmick.
+   //The value to change is here          v	 
+		assign state_ctr_next = sm_start ? 3'h4 : (   (op_switch_next) ? (state_ctr - 1) : state_ctr ) ; 
+
+		
+  rregs #(3) statect (state_ctr, (reset | ((no_op) & (~sm_start))) ? 3'h0 : state_ctr_next, eph1 );	
+	
     
-            //----------------------------------------------------------------
-            //Output flags. Synchronizes outputs for sqzdone and encdone.  
-            //----------------------------------------------------------------   
-    
-          assign sqzdone = sm_finish; 
-          rregs #(1) encflg (encdone, ~reset&sm_enc&(perm_ctr==op_switch_next), eph1);
-   
+		logic op_switch_next, nonce_op, asso_op, enc_op, sqz_op, no_op;		
+		
+		assign nonce_op = (state_ctr == 3'h4); // <--- this line is deleted during the gimmick. 
+    assign asso_op =  (state_ctr == 3'h3) ;   
+    assign enc_op  =  (state_ctr == 3'h2) ;
+    assign sqz_op  =  (state_ctr == 3'h1) ;
+		assign no_op   =  (state_ctr == 3'h0);
+		assign op_switch_next = (perm_ctr == 3'h0);
+		
+		assign sqzdone = sm_finish; 
+   rregs #(1) encflg (encdone, ~reset&enc_op&(perm_ctr==op_switch_next), eph1);
+	 
 
 
             //----------------------------------------------------------------
-            //Register Xoodyak's inputs. 
+            //Register Xoodyak's inputs.  Diassociate them so that 
             //----------------------------------------------------------------
   
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     nonce_r, assodata_r, key_r, verification_data_r;
           logic             opmode_r;  //the opmode is 1 for decryption and 0 for encryption.  
         
-          logic [383:0] sqz_in; 
+              logic [383:0] sqz_in; 
         
         //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
-        rregs_en #(192,1) txtr  ( textin_r           , textin            , eph1, sm_start_next);
-        rregs_en #(128,1) vrfr  (verification_data_r, verification_data  , eph1, sm_start_next); 
-        rregs_en #(128,1) noncr ( nonce_r            , nonce              , eph1, sm_start_next);
-        rregs_en #(128,1) assodr( assodata_r        , assodata          , eph1, sm_start_next);
-        rregs_en #(128,1) keyr  ( key_r              , key                , eph1, sm_start_next);
-        rregs_en #(1,1)   opmdr (opmode_r            , opmode            , eph1, sm_start_next); 
+        rregs_en #(192,1) txtr  ( textin_r, textin, eph1, sm_start_next);
+        rregs_en #(128,1) vrfr  (verification_data_r, verification_data,eph1, sm_start_next); 
+        rregs_en #(128,1) noncr ( nonce_r, nonce, eph1, sm_start_next);
+        rregs_en #(128,1) assodr( assodata_r, assodata, eph1, sm_start_next);
+        rregs_en #(128,1) keyr  ( key_r, key, eph1, sm_start_next);
+        rregs_en #(1,1)   opmdr (opmode_r, opmode, eph1, sm_start_next); 
+
 
 
         //This section verifies that the squeeze data matches the authentication data supplied at input.  
-        logic [127:0] auth_verification;      
-        assign verify = sm_finish & (&(verification_data_r ~^ authdata));
+				logic [127:0] auth_verification;      
+				rregs_en #(128,1) verif (auth_verification,verification_data_r, eph1, sm_start_next); 
+        assign verify = &(auth_verification ~^ authdata);
         
         logic [383:0] state_initial, state_nonce, state_asso_in, state_asso, state_enc_in ;
         logic    auth_start, crypt_start;
 
-//        assign state_initial = {key_r,nonce_r,8'h10,8'h01, 104'h0, 8'h2}; //  When the gimmick is active
+       // assign state_initial = {key_r,nonce_r,8'h10,8'h01, 104'h0, 8'h2}; //  When the gimmick is active
         assign state_initial = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
         //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
         //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
         
-      
+        
+        //////////////////////////////////////////////New stuff
         
         
-            //----------------------------------------------------------------
-            //Permute Inputs --- Traditional 
-            //----------------------------------------------------------------        
-            
+        
         logic [383:0] permute_in, permute_out, absorb_out ;
-        logic perm_done, start_flags;             
-            
-            
+        logic perm_done, start_flags; 
+        
         rmuxdx4_im #(384) permin (permute_in,
-              sm_nonce    , state_initial,  
-              sm_asso     , absorb_out,   
-              sm_enc      , {absorb_out[383:8], ~absorb_out[7], absorb_out[6:0]},                 
-              sm_sqz      , sqz_in
+        sm_run & ~( asso_op | enc_op | sqz_op |sm_finish)       , state_initial,  //   gimmick sm_run & ~( asso_op | enc_op | sqz_op |sm_finish)  
+        asso_op    , absorb_out,   // <----- this line is deleted during the gimmick.  
+        enc_op      , {absorb_out[383:8], ~absorb_out[7], absorb_out[6:0]},  //crypt input.                
+        sqz_op       , sqz_in
         ); 
-   
-   
         
-            //----------------------------------------------------------------
-            //Permute Inputs --- GIMMICK
-            //----------------------------------------------------------------        
-            
-/*         rmuxdx3_im #(384) permin (permute_in,
-              sm_asso      , state_initial,   
-              sm_enc       , {absorb_out[383:8], ~absorb_out[7], absorb_out[6:0]},  //crypt input.                
-              sm_sqz       , sqz_in
-        );  */
+    
         
-        
-            //----------------------------------------------------------------
-            //Xoodyak Permute --- Instantiates the permute module 
-            //----------------------------------------------------------------      
-            
           permute xoopermute(
               .eph1          (eph1),
               .reset         (reset),
@@ -219,33 +210,29 @@
               .state_out     (permute_out)
           );
         
+        //This performs the absorb manipulation required on the permute output:
+        //For DOWN(extra_data,8'h03)
+        logic [383:0] state_temp, cryptout; 
+        logic [127:0] extra_data;
+        assign extra_data = asso_op ? nonce : assodata ;
+        assign state_temp = extra_data^permute_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
+        // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
+        assign absorb_out = {state_temp, permute_out[255:249], ~permute_out[248] ,permute_out[247:2], ~permute_out[1:0]};
         
-            //----------------------------------------------------------------
-            //Permute post processing --- Modifies the permute output for recyclying.             
-            //----------------------------------------------------------------          
-          
-          //This performs the absorb manipulation required on the permute output:
-          //For DOWN(extra_data,8'h03)
-          logic [383:0] state_temp, cryptout; 
-          logic [127:0] extra_data;
-          assign extra_data = sm_asso ? nonce : assodata ;
-          assign state_temp = extra_data^permute_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
-          // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
-          assign absorb_out = {state_temp, permute_out[255:249], ~permute_out[248] ,permute_out[247:2], ~permute_out[1:0]};
+        //This performs the required manipulation on cipher output.  
         
-          //This performs the required manipulation on cipher output.  
-          
-          assign cryptout = {textin^permute_out[383:192], permute_out[191:0]};
-          assign textout = cryptout[383:192];   
-            
-          //inputs before permute for squeeze.    
-          logic [191:0] perm_select;
+       assign cryptout = {textin^permute_out[383:192], permute_out[191:0]};
+       assign textout = cryptout[383:192];   
+        
+      //inputs before permute for squeeze.    
+      logic [191:0] perm_select;
 
-          assign perm_select = opmode ? textin_r : cryptout[383:192]; 
-          assign sqz_in = {perm_select, cryptout[191:185] , ~cryptout[184], cryptout[183:7], ~cryptout[6], cryptout[5:0]}; 
-          
-          //Squeeze outputs:
-          assign authdata = permute_out[383:256];
+      assign perm_select = opmode ? textin : cryptout[383:192]; 
+      assign sqz_in = {perm_select, cryptout[191:185] , ~cryptout[184], cryptout[183:7], ~cryptout[6], cryptout[5:0]};  
+      
+      
+      //Squeeze outputs:
+      assign authdata = permute_out[383:256];
         
 
         endmodule: xoodyak   
@@ -258,7 +245,7 @@
           input logic          eph1,
           input logic          reset, 
            
-          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
+					input logic  				 run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
           
           output logic [383:0] state_out
@@ -1274,12 +1261,12 @@ assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this 
       
 
       //Fake registers for verification.
-      
-      logic [383:0] state_out1, state_out2, state_out3;
-      
-      rregs_en #(384,1) permstatef1 (state_out1, reset ? '0 : perm_reconcat, eph1, run); 
-      rregs_en #(384,1) permstatef2 (state_out2, reset ? '0 : state_out1, eph1, run); 
-    rregs_en #(384,1) permstatef3 (state_out3, reset ? '0 : state_out2, eph1, run); 
+			
+			logic [383:0] state_out1, state_out2, state_out3;
+			
+			rregs_en #(384,1) permstatef1 (state_out1, reset ? '0 : perm_reconcat, eph1, run); 
+			rregs_en #(384,1) permstatef2 (state_out2, reset ? '0 : state_out1, eph1, run); 
+	  rregs_en #(384,1) permstatef3 (state_out3, reset ? '0 : state_out2, eph1, run); 
 
 
       //Output is registered for timing purposes.    
