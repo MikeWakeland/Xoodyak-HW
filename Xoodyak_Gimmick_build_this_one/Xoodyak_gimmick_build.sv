@@ -236,13 +236,13 @@
         
           //This performs the required manipulation on cipher output.  
           
-          assign cryptout = {textin^permute_out[383:192], permute_out[191:0]};
+          assign cryptout = {textin_r^permute_out[383:192], permute_out[191:0]};
           assign textout = cryptout[383:192];   
             
           //inputs before permute for squeeze.    
           logic [191:0] perm_select;
 
-          assign perm_select = opmode ? textin_r : cryptout[383:192]; 
+          assign perm_select = opmode_r ? textin_r : cryptout[383:192]; 
           assign sqz_in = {perm_select, cryptout[191:185] , ~cryptout[184], cryptout[183:7], ~cryptout[6], cryptout[5:0]}; 
           
           //Squeeze outputs:

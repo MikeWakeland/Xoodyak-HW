@@ -225,14 +225,14 @@
           //For DOWN(extra_data,8'h03)
           logic [383:0] state_temp, cryptout; 
           logic [127:0] extra_data;
-          assign extra_data = sm_asso ? nonce : assodata ;
+          assign extra_data = sm_asso ? nonce_r : assodata_r ;
           assign state_temp = extra_data^permute_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
           // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
           assign absorb_out = {state_temp, permute_out[255:249], ~permute_out[248] ,permute_out[247:2], ~permute_out[1:0]};
         
           //This performs the required manipulation on cipher output.  
           
-          assign cryptout = {textin^permute_out[383:192], permute_out[191:0]};
+          assign cryptout = {textin_r^permute_out[383:192], permute_out[191:0]};
           assign textout = cryptout[383:192];   
             
           //inputs before permute for squeeze.    
