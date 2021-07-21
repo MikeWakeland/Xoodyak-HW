@@ -82,18 +82,19 @@
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //----------------------------------------------------------------
+        logic                    sm_cryp_finish, sm_sqz_finish, sm_start_r, nonce_done, asso_done;    
         logic                    sm_idle,  sm_start, sm_run, sm_finish, sm_idle_next, sm_start_next,  sm_nonce_next, op_switch_next,
-                                 sm_nonce , sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run;
+                                 sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run; //sm_nonce; 
         logic   [127:0]          plain_text_r, round_recycle, round_key;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
+        logic                    opmode_r;  //the opmode is 1 for decryption and 0 for encryption.  
 
-
-        assign run = sm_nonce | sm_asso | sm_enc | sm_sqz;
+        assign run = sm_asso | sm_enc | sm_sqz ; //sm_nonce;
         //FSM
         assign sm_start_next  =  start & sm_idle;        
-        assign sm_nonce_next  = (~sm_start_next) & (                     sm_start | (sm_nonce & ~op_switch_next));  //Commented when in Gimmick mode. 
-//      assign sm_asso_next  =  (~sm_start_next) & (                     sm_start | (sm_asso  & ~op_switch_next));  //Commented when in Traditional mode.         
-        assign sm_asso_next   = (~sm_start_next) & (  (sm_nonce & op_switch_next) | (sm_asso  & ~op_switch_next));  //Commented when in Gimmick mode.  
+//        assign sm_nonce_next  = (~sm_start_next) & (                     sm_start | (sm_nonce & ~op_switch_next));  //Commented when in Gimmick mode. 
+        assign sm_asso_next  =  (~sm_start_next) & (                     sm_start | (sm_asso  & ~op_switch_next));  //Commented when in Traditional mode.         
+//        assign sm_asso_next   = (~sm_start_next) & (  (sm_nonce & op_switch_next) | (sm_asso  & ~op_switch_next));  //Commented when in Gimmick mode.  
         assign sm_enc_next    = (~sm_start_next) & (  (sm_asso  & op_switch_next) | (sm_enc   & ~op_switch_next));
         assign sm_sqz_next    = (~sm_start_next) & (  (sm_enc   & op_switch_next) | (sm_sqz   & ~op_switch_next));        
         assign sm_finish_next = (~sm_start_next) & (   sm_sqz   & op_switch_next);
@@ -102,7 +103,7 @@
         
         rregs #(1) smir (sm_idle,    reset | sm_idle_next,   eph1);
         rregs #(1) smsr (sm_start,  ~reset & sm_start_next,  eph1);
-        rregs #(1) smno (sm_nonce,  ~reset & sm_nonce_next,  eph1); //Commented when in Gimmick mode.  
+ //       rregs #(1) smno (sm_nonce,  ~reset & sm_nonce_next,  eph1); //Commented when in Gimmick mode.  
         rregs #(1) smas (sm_asso,   ~reset & sm_asso_next,   eph1);
         rregs #(1) smen (sm_enc,    ~reset & sm_enc_next,    eph1);
         rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
@@ -113,19 +114,21 @@
             //State Counters.  Counts how many clocks remain before a state change. 
             //----------------------------------------------------------------   
           
-          logic [2:0] perm_ctr,  perm_ctr_next,  state_ctr, state_ctr_next; 					
-					
-					//The initial counter values change based on how many clocks it takes to perform a permute,
+          logic [2:0] perm_ctr,  perm_ctr_next,  state_ctr, state_ctr_next;
+          logic    auth_start, crypt_start;           
+          
+          //The initial counter values change based on how many clocks it takes to perform a permute,
           //And whether the "gimmick" is active.  If the "gimmick" is active, STATE_CTR_INIT is 3 instead of 4.  
           //perm_ctr counts how many clocks until a state change. The value is 1 less than the amount of registers in permute.  
-					//Or the same as the amount of registers, if you begin counting at zero.  
+          //Or the same as the amount of registers, if you begin counting at zero.  
           //state_ctr counts how many state changes remain in an operation. 
           
           localparam logic [2:0] PERM_INIT = 3'h0;   
-          localparam logic [2:0] STATE_CTR_INIT = 3'h4;
+//        localparam logic [2:0] STATE_CTR_INIT = 3'h4; //traditional
+          localparam logic [2:0] STATE_CTR_INIT = 3'h3; //gimmick
           assign op_switch_next = (perm_ctr == 3'h0);
             
-						//test
+            //test
           assign perm_ctr_next = perm_ctr - 1; 
           rregs #(3) permc (perm_ctr, (reset | sm_start |(op_switch_next)) ? PERM_INIT : perm_ctr_next, eph1);  
 
@@ -148,8 +151,7 @@
   
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     nonce_r, assodata_r, key_r, verification_data_r;
-          logic             opmode_r;  //the opmode is 1 for decryption and 0 for encryption.  
-        
+         
           logic [383:0] sqz_in; 
         
         //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
@@ -166,10 +168,10 @@
         assign verify = opmode_r & sm_finish & (&(verification_data_r ~^ authdata));
         
         logic [383:0] state_initial, state_nonce, state_asso_in, state_asso, state_enc_in ;
-        logic    auth_start, crypt_start;
 
-//        assign state_initial = {key_r,nonce_r,8'h10,8'h01, 104'h0, 8'h2}; //  When the gimmick is active
-        assign state_initial = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
+
+        assign state_initial = {key_r,nonce_r,8'h10,8'h01, 104'h0, 8'h2}; //  When the gimmick is active
+//        assign state_initial = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
         //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
         //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
         
@@ -179,11 +181,11 @@
             //----------------------------------------------------------------
             //Permute Inputs --- Traditional 
             //----------------------------------------------------------------        
-            
+             
         logic [383:0] permute_in, permute_out, absorb_out ;
         logic perm_done, start_flags;             
             
-            
+  /*          
         rmuxdx4_im #(384) permin (permute_in,
               sm_nonce    , state_initial,  
               sm_asso     , absorb_out,   
@@ -191,17 +193,17 @@
               sm_sqz      , sqz_in
         ); 
    
-   
+    */
         
             //----------------------------------------------------------------
-            //Permute Inputs --- GIMMICK
+            //Permute Inputs --- gimmick
             //----------------------------------------------------------------        
             
-/*         rmuxdx3_im #(384) permin (permute_in,
+        rmuxdx3_im #(384) permin (permute_in,
               sm_asso      , state_initial,   
               sm_enc       , {absorb_out[383:8], ~absorb_out[7], absorb_out[6:0]},  //crypt input.                
               sm_sqz       , sqz_in
-        );  */
+        ); 
         
         
             //----------------------------------------------------------------
@@ -225,7 +227,9 @@
           //For DOWN(extra_data,8'h03)
           logic [383:0] state_temp, cryptout; 
           logic [127:0] extra_data;
-          assign extra_data = sm_asso ? nonce : assodata ;
+					
+					assign extra_data = assodata_r; 
+          //assign extra_data = sm_asso ? nonce : assodata ;
           assign state_temp = extra_data^permute_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
           // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
           assign absorb_out = {state_temp, permute_out[255:249], ~permute_out[248] ,permute_out[247:2], ~permute_out[1:0]};
@@ -1272,15 +1276,15 @@ assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this 
 
      
       rregs_en #(384,1) permstate (state_out, reset ? '0 : perm_reconcat, eph1, run); 
-			
+      
 /*    Fake registers for verification.
-			Change the localaparam value to 3 to execute this block.  
-			logic [383:0] state_out1, state_out2, state_out3;
+      Change the localaparam value to 3 to execute this block.  
+      logic [383:0] state_out1, state_out2, state_out3;
       
       rregs_en #(384,1) permstatef1 (state_out1, reset ? '0 : perm_reconcat, eph1, run); 
       rregs_en #(384,1) permstatef2 (state_out2, reset ? '0 : state_out1, eph1, run); 
       rregs_en #(384,1) permstatef3 (state_out3, reset ? '0 : state_out2, eph1, run); 
-			
+      
       //Output is registered for timing purposes.    
       rregs_en #(384,1) permstate (state_out, reset ? '0 : state_out3, eph1, run);  */
       

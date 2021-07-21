@@ -1,5 +1,5 @@
 		`include "muxreglib.sv"
-		`include "Xoodyak_Lib_onepermute.sv"
+		`include "Xoodyak_gimmick_build.sv"
 		`define SIM  //tick commands are commands to the tools.  Tells the tools that it should go to these files and grab whats in there.  
 
 		//----------------------------------------------
