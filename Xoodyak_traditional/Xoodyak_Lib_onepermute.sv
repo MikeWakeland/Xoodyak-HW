@@ -113,19 +113,19 @@
             //State Counters.  Counts how many clocks remain before a state change. 
             //----------------------------------------------------------------   
           
-          logic [2:0] perm_ctr,  perm_ctr_next,  state_ctr, state_ctr_next; 					
-					
-					//The initial counter values change based on how many clocks it takes to perform a permute,
+          logic [2:0] perm_ctr,  perm_ctr_next,  state_ctr, state_ctr_next;           
+          
+          //The initial counter values change based on how many clocks it takes to perform a permute,
           //And whether the "gimmick" is active.  If the "gimmick" is active, STATE_CTR_INIT is 3 instead of 4.  
           //perm_ctr counts how many clocks until a state change. The value is 1 less than the amount of registers in permute.  
-					//Or the same as the amount of registers, if you begin counting at zero.  
+          //Or the same as the amount of registers, if you begin counting at zero.  
           //state_ctr counts how many state changes remain in an operation. 
           
           localparam logic [2:0] PERM_INIT = 3'h0;   
           localparam logic [2:0] STATE_CTR_INIT = 3'h4;
           assign op_switch_next = (perm_ctr == 3'h0);
             
-						//test
+            //test
           assign perm_ctr_next = perm_ctr - 1; 
           rregs #(3) permc (perm_ctr, (reset | sm_start |(op_switch_next)) ? PERM_INIT : perm_ctr_next, eph1);  
 
@@ -238,7 +238,7 @@
           //inputs before permute for squeeze.    
           logic [191:0] perm_select;
 
-          assign perm_select = opmode ? textin_r : cryptout[383:192]; 
+          assign perm_select = opmode_r ? textin_r : cryptout[383:192]; 
           assign sqz_in = {perm_select, cryptout[191:185] , ~cryptout[184], cryptout[183:7], ~cryptout[6], cryptout[5:0]}; 
           
           //Squeeze outputs:
@@ -1272,15 +1272,15 @@ assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this 
 
      
       rregs_en #(384,1) permstate (state_out, reset ? '0 : perm_reconcat, eph1, run); 
-			
+      
 /*    Fake registers for verification.
-			Change the localaparam value to 3 to execute this block.  
-			logic [383:0] state_out1, state_out2, state_out3;
+      Change the localaparam value to 3 to execute this block.  
+      logic [383:0] state_out1, state_out2, state_out3;
       
       rregs_en #(384,1) permstatef1 (state_out1, reset ? '0 : perm_reconcat, eph1, run); 
       rregs_en #(384,1) permstatef2 (state_out2, reset ? '0 : state_out1, eph1, run); 
       rregs_en #(384,1) permstatef3 (state_out3, reset ? '0 : state_out2, eph1, run); 
-			
+      
       //Output is registered for timing purposes.    
       rregs_en #(384,1) permstate (state_out, reset ? '0 : state_out3, eph1, run);  */
       

@@ -92,8 +92,8 @@
         assign run = sm_asso | sm_enc | sm_sqz ; //sm_nonce;
         //FSM
         assign sm_start_next  =  start & sm_idle;        
-//        assign sm_nonce_next  = (~sm_start_next) & (                     sm_start | (sm_nonce & ~op_switch_next));  //Commented when in Gimmick mode. 
-        assign sm_asso_next  =  (~sm_start_next) & (                     sm_start | (sm_asso  & ~op_switch_next));  //Commented when in Traditional mode.         
+//        assign sm_nonce_next  = (~sm_start_next) & (   sm_start | (sm_nonce & ~op_switch_next));  //Commented when in Gimmick mode. 
+        assign sm_asso_next  =  (~sm_start_next) & (   sm_start | (sm_asso  & ~op_switch_next));  //Commented when in Traditional mode.         
 //        assign sm_asso_next   = (~sm_start_next) & (  (sm_nonce & op_switch_next) | (sm_asso  & ~op_switch_next));  //Commented when in Gimmick mode.  
         assign sm_enc_next    = (~sm_start_next) & (  (sm_asso  & op_switch_next) | (sm_enc   & ~op_switch_next));
         assign sm_sqz_next    = (~sm_start_next) & (  (sm_enc   & op_switch_next) | (sm_sqz   & ~op_switch_next));        
@@ -227,8 +227,8 @@
           //For DOWN(extra_data,8'h03)
           logic [383:0] state_temp, cryptout; 
           logic [127:0] extra_data;
-					
-					assign extra_data = assodata_r; 
+          
+          assign extra_data = assodata_r; //No reason for the mux when in gimmick mode.  
           //assign extra_data = sm_asso ? nonce : assodata ;
           assign state_temp = extra_data^permute_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
           // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
