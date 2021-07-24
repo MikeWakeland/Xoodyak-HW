@@ -111,8 +111,8 @@ logic sqzdone_dec, encdone_dec;
 logic [191:0] textout1, textout2, textout3, textout4, textout5;
 
 			rregs #(192) cysync1 (textout1, textout_o,eph1); 
-		//	rregs #(192) cysync2 (textout2, textout1, eph1); 
-	  //rregs   #(192) cysync3 (textout3, textout2, eph1); 
+		rregs #(192) cysync2 (textout2, textout1, eph1); 
+	  rregs   #(192) cysync3 (textout3, textout2, eph1); 
 		  //rregs   #(192) cysync4 (textout4, textout3, eph1); 
 			//  rregs   #(192) cysync5 (textout5, textout4, eph1); 
 
@@ -121,7 +121,7 @@ logic [191:0] textout1, textout2, textout3, textout4, textout5;
 			 .reset (reset),
 			 .start (sqzdone),
 			
-       .textin    (textout1),                                        //Either plain text or cipher text depending on opmode
+       .textin    (textout3),                                        //Either plain text or cipher text depending on opmode
        .nonce   (nonce_t),
 			 .assodata (asso_data_t),
        .key      (key_t),
@@ -135,13 +135,6 @@ logic [191:0] textout1, textout2, textout3, textout4, textout5;
 			.verify (verif_dec)
     );
 
-
-
-
-		 
-		 
-		 
-		
 		endmodule: tb_top
  
 		
