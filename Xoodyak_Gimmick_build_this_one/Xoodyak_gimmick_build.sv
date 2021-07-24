@@ -354,7 +354,7 @@
           .rc3  (sbox_rnd3),
           .state_in  (permin),
           
-          .state_out (state_interm),
+          .state_out (state_interm)
 
       );
       
@@ -395,7 +395,7 @@
           
           input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
           
-          output logic [383:0] state_out,
+          output logic [383:0] state_out
 
       );
                  
