@@ -121,7 +121,7 @@
           //Or the same as the amount of registers, if you begin counting at zero.  
           //state_ctr counts how many state changes remain in an operation. 
           
-          localparam logic [2:0] PERM_INIT = 3'h0;   
+          localparam logic [2:0] PERM_INIT = 3'h2;   
           localparam logic [2:0] STATE_CTR_INIT = 3'h4;
           assign op_switch_next = (perm_ctr == 3'h0);
             
@@ -250,6 +250,7 @@
  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
  
      
+     
       module permute( 
       
           input logic          eph1,
@@ -296,6 +297,66 @@
                they are : { 32'h58, 32'h38, 32'h3c0, 32'hD0, 32'h120, 32'h14, 32'h60, 32'h2c, 32'h380, 32'hF0, 32'h1A0, 32'h12}
            */
         
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////
+        ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////
+        
+      logic  [383:0] state_out03, state_out47;
+      logic runout03, runout47;
+      
+      permute03 perm3( 
+      
+          .eph1  (eph1),
+          .reset  (reset),
+           
+          .run  (run),
+          .state_in  (state_in),
+          
+          .state_out (state_out03),
+          .runout    (runout03)
+
+      );
+       
+     permute47 perm7( 
+      
+          .eph1  (eph1),
+          .reset  (reset),
+           
+          .run  (runout03),
+          .state_in  (state_out03),
+          
+          .state_out (state_out47),
+          .runout    (runout47)
+
+      );
+       
+    permute8b perm8( 
+      
+          .eph1  (eph1),
+          .reset  (reset),
+           
+          .run  (runout47),
+          .state_in  (state_out47),
+          
+          .state_out (state_out)
+      );
+     
+ endmodule: permute
+ 
+ 
+       module permute03( 
+      
+          input logic          eph1,
+          input logic          reset, 
+           
+          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
+          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
+          
+          output logic [383:0] state_out,
+          output logic         runout
+
+      );
+                 
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -664,6 +725,28 @@ assign rho_west_3[0][0] = theta_out_3[0][0];
         
         assign round_out_3 = rho_east_3;
 
+
+      rregs_en #(384,1) permstatef1 (state_out, reset ? '0 : round_out_3, eph1, run);
+      rregs #(1) run1 (runout, run, eph1);      
+
+      endmodule: permute03
+
+
+
+      module permute47( 
+      
+          input logic          eph1,
+          input logic          reset, 
+           
+          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
+          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
+          
+          output logic [383:0] state_out,
+          output logic         runout
+
+      );
+
+
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////////////////////////Round four///////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -672,7 +755,7 @@ assign rho_west_3[0][0] = theta_out_3[0][0];
         logic [3:0][31:0] p_4, e_4; 
         logic [2:0][3:0][31:0] perm_input_4;
 
-        assign perm_input_4 = round_out_3;
+        assign perm_input_4 = state_in;
         assign p_4 =  perm_input_4[0]^perm_input_4[1]^perm_input_4[2];  
 
         
@@ -957,16 +1040,38 @@ assign rho_west_7[0][0] = theta_out_7[0][0];
         assign round_out_7 = rho_east_7;
 
 
+        rregs_en #(384,1) permstatef1 (state_out, reset ? '0 : round_out_7, eph1, run);
+        rregs #(1) run1 (runout, run, eph1); 
+        
+        endmodule: permute47
+        
+        
+        
+        
 
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////////////////////////Round eight//////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+      module permute8b( 
+      
+          input logic          eph1,
+          input logic          reset, 
+           
+          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
+          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
+          
+          output logic [383:0] state_out
+
+      );
+
+
         //Theta input
         logic [3:0][31:0] p_8, e_8; 
         logic [2:0][3:0][31:0] perm_input_8;
 
-        assign perm_input_8 = round_out_7;
+        assign perm_input_8 = state_in;
         assign p_8 =  perm_input_8[0]^perm_input_8[1]^perm_input_8[2];  
 
         
@@ -1269,21 +1374,10 @@ assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this 
                                   round_out_b[263:256],round_out_b[271:264],round_out_b[279:272],round_out_b[287:280]
                                 };
       
-
-     
       rregs_en #(384,1) permstate (state_out, reset ? '0 : perm_reconcat, eph1, run); 
-      
-/*    Fake registers for verification.
-      Change the localaparam value to 3 to execute this block.  
-      logic [383:0] state_out1, state_out2, state_out3;
-      
-      rregs_en #(384,1) permstatef1 (state_out1, reset ? '0 : perm_reconcat, eph1, run); 
-      rregs_en #(384,1) permstatef2 (state_out2, reset ? '0 : state_out1, eph1, run); 
-      rregs_en #(384,1) permstatef3 (state_out3, reset ? '0 : state_out2, eph1, run); 
-      
-      //Output is registered for timing purposes.    
-      rregs_en #(384,1) permstate (state_out, reset ? '0 : state_out3, eph1, run);  */
-      
-        endmodule: permute
+            
+        endmodule: permute8b
 
-     
+ 
+ 
+ 
