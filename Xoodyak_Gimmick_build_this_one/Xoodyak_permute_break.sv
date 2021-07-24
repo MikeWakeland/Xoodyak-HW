@@ -1,4 +1,4 @@
-      module permute( 
+      module permute_legacy( 
       
           input logic          eph1,
           input logic          reset, 
@@ -1032,4 +1032,4 @@ assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this 
       //Output is registered for timing purposes.    
       rregs_en #(384,1) permstate (state_out, reset ? '0 : state_out3, eph1, run);  */
       
-        endmodule: permute
+        endmodule: permute_legacy

@@ -208,17 +208,17 @@
         
             //----------------------------------------------------------------
             //Xoodyak Permute --- Instantiates the permute module 
-            //----------------------------------------------------------------      
-            
+            //----------------------------------------------------------------                
+          
           permute xoopermute(
               .eph1          (eph1),
               .reset         (reset),
               .run           (~sm_idle),
               .state_in      (permute_in),
+              .sbox_ctrl     (perm_ctr),
               .state_out     (permute_out)
-          );
-        
-        
+          );    
+          
             //----------------------------------------------------------------
             //Permute post processing --- Modifies the permute output for recyclying.             
             //----------------------------------------------------------------          
@@ -228,8 +228,7 @@
           logic [383:0] state_temp, cryptout; 
           logic [127:0] extra_data;
           
-          assign extra_data = assodata_r; //No reason for the mux when in gimmick mode.  
-          //assign extra_data = sm_asso ? nonce : assodata ;
+          assign extra_data = assodata_r;
           assign state_temp = extra_data^permute_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
           // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
           assign absorb_out = {state_temp, permute_out[255:249], ~permute_out[248] ,permute_out[247:2], ~permute_out[1:0]};
@@ -261,6 +260,7 @@
            
           input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
+          input logic  [2:0]   sbox_ctrl, 
           
           output logic [383:0] state_out
 
@@ -304,72 +304,26 @@
         ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         
-      logic  [383:0] state_out03, state_out47;
-      logic runout03, runout47;
-      
-      permute03 perm3( 
-      
-          .eph1  (eph1),
-          .reset  (reset),
-           
-          .run  (run),
-          .state_in  (state_in),
-          
-          .state_out (state_out03),
-          .runout    (runout03)
 
-      );
-       
-     permute47 perm7( 
+      logic  [383:0] state_interm;      
+      logic [3:0][11:0] SBOX0, SBOX1, SBOX2, SBOX3;
+      assign SBOX0 = { 12'h58 ,  12'h120,  12'h380 }; 
+      assign SBOX1 = { 12'h38 ,  12'h14 ,  12'hF0  };      
+      assign SBOX2 = { 12'h3c0,  12'h60 ,  12'h1A0 };  
+      assign SBOX3 = { 12'hD0 ,  12'h2c ,  12'h12  };  
+  
+      logic [11:0] sbox_rnd0, sbox_rnd1, sbox_rnd2, sbox_rnd3;
+      assign sbox_rnd0 = SBOX0[sbox_ctrl];
+      assign sbox_rnd1 = SBOX1[sbox_ctrl];
+      assign sbox_rnd2 = SBOX2[sbox_ctrl];
+      assign sbox_rnd3 = SBOX3[sbox_ctrl];      
       
-          .eph1  (eph1),
-          .reset  (reset),
-           
-          .run  (runout03),
-          .state_in  (state_out03),
-          
-          .state_out (state_out47),
-          .runout    (runout47)
-
-      );
-       
-    permute8b perm8( 
-      
-          .eph1  (eph1),
-          .reset  (reset),
-           
-          .run  (runout47),
-          .state_in  (state_out47),
-          
-          .state_out (state_out)
-      );
-     
- endmodule: permute
- 
- 
-       module permute03( 
-      
-          input logic          eph1,
-          input logic          reset, 
-           
-          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
-          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
-          
-          output logic [383:0] state_out,
-          output logic         runout
-
-      );
-                 
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        
         //Greek syms.  θ ρwest ι Χ ρeast
         //The CIBOX constants, retained for reference, are: '{ 32'h58, 32'h38, 32'h3c0, 32'hD0, 32'h120, 32'h14, 32'h60, 32'h2c, 32'h380, 32'hF0, 32'h1A0, 32'h12}; 
        
-        logic [383:0]  bits_le;
+        logic [383:0]  bits_le, state_recycle, permin;
         assign bits_le = {// So not only is each block of 32' reversed in a 128' double double word, but each 
-                          //128' double double word position is reversed in the total state.  Fuck that are you kidding me?  
+                          //128' double double word position is reversed in the total state. 
                           state_in[103:96] ,state_in[111:104],state_in[119:112],state_in[127:120],
                           state_in[71:64]  ,state_in[79:72]  ,state_in[87:80]  ,state_in[95:88],
                           state_in[39:32]  ,state_in[47:40]  ,state_in[55:48]  ,state_in[63:56],
@@ -385,6 +339,67 @@
                           state_in[295:288],state_in[303:296],state_in[311:304],state_in[319:312],
                           state_in[263:256],state_in[271:264],state_in[279:272],state_in[287:280]
                           };
+    
+     assign permin = (sbox_ctrl == 3'h2) ? bits_le : state_recycle;  
+      
+      permute_rnd perm3( 
+      
+          .eph1  (eph1),
+          .reset  (reset),
+           
+          .run  (run),
+          .rc0  (sbox_rnd0),
+          .rc1  (sbox_rnd1),
+          .rc2  (sbox_rnd2),
+          .rc3  (sbox_rnd3),
+          .state_in  (permin),
+          
+          .state_out (state_interm),
+
+      );
+      
+      rregs_en #(384,1) permstate (state_recycle, reset ? '0 : state_interm, eph1, run);      
+    
+
+      assign state_out = {      state_recycle[103:96] ,state_recycle[111:104],state_recycle[119:112],state_recycle[127:120],
+                                state_recycle[71:64]  ,state_recycle[79:72]  ,state_recycle[87:80]  ,state_recycle[95:88],
+                                state_recycle[39:32]  ,state_recycle[47:40]  ,state_recycle[55:48]  ,state_recycle[63:56],
+                                state_recycle[7:0]    ,state_recycle[15:8]   ,state_recycle[23:16]  ,state_recycle[31:24],                          
+                                
+                                state_recycle[231:224],state_recycle[239:232],state_recycle[247:240],state_recycle[255:248],
+                                state_recycle[199:192],state_recycle[207:200],state_recycle[215:208],state_recycle[223:216],
+                                state_recycle[167:160],state_recycle[175:168],state_recycle[183:176],state_recycle[191:184],
+                                state_recycle[135:128],state_recycle[143:136],state_recycle[151:144],state_recycle[159:152],
+                                
+                                state_recycle[359:352],state_recycle[367:360],state_recycle[375:368], state_recycle[383:376],
+                                state_recycle[327:320],state_recycle[335:328],state_recycle[343:336],state_recycle[351:344],
+                                state_recycle[295:288],state_recycle[303:296],state_recycle[311:304],state_recycle[319:312],
+                                state_recycle[263:256],state_recycle[271:264],state_recycle[279:272],state_recycle[287:280]
+                              };
+     
+       endmodule: permute
+ 
+ 
+ 
+ 
+       module permute_rnd( 
+      
+          input logic          eph1,
+          input logic          reset, 
+           
+          input logic           run,  
+          input logic [11:0]    rc0,
+          input logic [11:0]    rc1,
+          input logic [11:0]    rc2,
+          input logic [11:0]    rc3,          
+          
+          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
+          
+          output logic [383:0] state_out,
+
+      );
+                 
+
         
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////////////////////////Round zero///////////////////////////////////////////////////
@@ -395,7 +410,7 @@
         logic [3:0][31:0] p_0, e_0; //Indicies: lane, zed.
         logic [2:0][3:0][31:0] perm_input_0;
 
-        assign perm_input_0 = bits_le;
+        assign perm_input_0 = state_in;
         
         // P <- A0 + A1 + A2
         assign p_0 =  perm_input_0[0]^perm_input_0[1]^perm_input_0[2];  //Will need to make a better version later.  
@@ -450,7 +465,9 @@
      /***WARNING! Table 2 of the the specification requires that the round constant's least significant bit is at z = 0,
          but software test benching has reversed what order these values are applied.  For consistency purposes I have 
          kept them reversed to match the software, but this is not algorithmically correct per the specification.*** */
-assign rho_west_0[0][3] = theta_out_0[0][3] ^ {32'h58}; 
+
+assign rho_west_0[0][3][31:12]= theta_out_0[0][3][31:12];
+assign rho_west_0[0][3][11:0] = theta_out_0[0][3][11:0] ^ rc0; 
         assign rho_west_0[0][2] = theta_out_0[0][2]; 
         assign rho_west_0[0][1] = theta_out_0[0][1]; 
 assign rho_west_0[0][0] = theta_out_0[0][0];  //The round constant, 32'h58, should be applied HERE.
@@ -544,7 +561,10 @@ assign rho_west_0[0][0] = theta_out_0[0][0];  //The round constant, 32'h58, shou
         assign rho_west_1[1][0] = theta_out_1[1][1];
 
 
-assign rho_west_1[0][3] = theta_out_1[0][3] ^ {32'h38}; 
+
+
+assign rho_west_1[0][3][31:12]= theta_out_1[0][3][31:12];
+assign rho_west_1[0][3][11:0] = theta_out_1[0][3][11:0] ^ rc1;  
         assign rho_west_1[0][2] = theta_out_1[0][2]; 
         assign rho_west_1[0][1] = theta_out_1[0][1]; 
 assign rho_west_1[0][0] = theta_out_1[0][0]; 
@@ -621,7 +641,8 @@ assign rho_west_1[0][0] = theta_out_1[0][0];
         assign rho_west_2[1][0] = theta_out_2[1][1];
 
 
-assign rho_west_2[0][3] = theta_out_2[0][3] ^ {32'h3c0}; 
+assign rho_west_2[0][3][31:12]= theta_out_2[0][3][31:12];
+assign rho_west_2[0][3][11:0] = theta_out_2[0][3][11:0] ^ rc2; 
           assign rho_west_2[0][2] = theta_out_2[0][2]; 
           assign rho_west_2[0][1] = theta_out_2[0][1]; 
 assign rho_west_2[0][0] = theta_out_2[0][0];
@@ -697,7 +718,8 @@ assign rho_west_2[0][0] = theta_out_2[0][0];
         assign rho_west_3[1][0] = theta_out_3[1][1];
 
 
-assign rho_west_3[0][3] = theta_out_3[0][3] ^ {32'hd0}; 
+assign rho_west_3[0][3][31:12]= theta_out_3[0][3][31:12];
+assign rho_west_3[0][3][11:0] = theta_out_3[0][3][11:0] ^ rc3; 
           assign rho_west_3[0][2] = theta_out_3[0][2]; 
           assign rho_west_3[0][1] = theta_out_3[0][1]; 
 assign rho_west_3[0][0] = theta_out_3[0][0];
@@ -726,662 +748,10 @@ assign rho_west_3[0][0] = theta_out_3[0][0];
 
         logic [383:0] round_out_3;
         
-        assign round_out_3 = rho_east_3;
+        assign state_out = rho_east_3;  
 
+      endmodule: permute_rnd
 
-      rregs_en #(384,1) permstatef1 (state_out, reset ? '0 : round_out_3, eph1, run);
-      rregs #(1) run1 (runout, run, eph1);      
 
-      endmodule: permute03
-
-
-
-      module permute47( 
-      
-          input logic          eph1,
-          input logic          reset, 
-           
-          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
-          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
-          
-          output logic [383:0] state_out,
-          output logic         runout
-
-      );
-
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round four///////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-        logic [3:0][31:0] p_4, e_4; 
-        logic [2:0][3:0][31:0] perm_input_4;
-
-        assign perm_input_4 = state_in;
-        assign p_4 =  perm_input_4[0]^perm_input_4[1]^perm_input_4[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_4, p_x1_z14_4;
-        assign p_x1_z5_4[3] = {p_4[0][26:0], p_4[0][31:27]}; 
-        assign p_x1_z5_4[2] = {p_4[3][26:0], p_4[3][31:27]}; 
-        assign p_x1_z5_4[1] = {p_4[2][26:0], p_4[2][31:27]}; 
-        assign p_x1_z5_4[0] = {p_4[1][26:0], p_4[1][31:27]};
-
-        assign p_x1_z14_4[3] ={p_4[0][17:0], p_4[0][31:18]};
-        assign p_x1_z14_4[2] ={p_4[3][17:0], p_4[3][31:18]}; 
-        assign p_x1_z14_4[1] ={p_4[2][17:0], p_4[2][31:18]}; 
-        assign p_x1_z14_4[0] ={p_4[1][17:0], p_4[1][31:18]};  
-
-        assign e_4 = p_x1_z5_4^p_x1_z14_4;
-
-        logic [2:0][3:0][31:0] theta_out_4;
-
-        assign theta_out_4[2] = perm_input_4[2]^e_4;
-        assign theta_out_4[1] = perm_input_4[1]^e_4;
-        assign theta_out_4[0] = perm_input_4[0]^e_4;
-
-        logic [2:0][3:0][31:0] rho_west_4;
-
-     
-        assign rho_west_4[2][3] = {theta_out_4[2][3][20:0] , theta_out_4[2][3][31:21]};
-        assign rho_west_4[2][2] = {theta_out_4[2][2][20:0] , theta_out_4[2][2][31:21]};
-        assign rho_west_4[2][1] = {theta_out_4[2][1][20:0] , theta_out_4[2][1][31:21]};
-        assign rho_west_4[2][0] = {theta_out_4[2][0][20:0] , theta_out_4[2][0][31:21]};
-
-        assign rho_west_4[1][3] = theta_out_4[1][0];
-        assign rho_west_4[1][2] = theta_out_4[1][3];
-        assign rho_west_4[1][1] = theta_out_4[1][2];
-        assign rho_west_4[1][0] = theta_out_4[1][1];
-
-assign rho_west_4[0][3] = theta_out_4[0][3] ^ {32'h120}; 
-          assign rho_west_4[0][2] = theta_out_4[0][2]; 
-          assign rho_west_4[0][1] = theta_out_4[0][1]; 
-assign rho_west_4[0][0] = theta_out_4[0][0];  
-          
-
-        logic [2:0][3:0][31:0] chi_out_4;
-
-        assign chi_out_4[2] = rho_west_4[2]^(rho_west_4[1]&~rho_west_4[0]);
-        assign chi_out_4[1] = rho_west_4[1]^(rho_west_4[0]&~rho_west_4[2]);
-        assign chi_out_4[0] = rho_west_4[0]^(rho_west_4[2]&~rho_west_4[1]);
-        
-        logic [2:0][3:0][31:0] rho_east_4;
-      
-        assign rho_east_4[2][3] = {chi_out_4[2][1][23:0], chi_out_4[2][1][31:24]};
-        assign rho_east_4[2][2] = {chi_out_4[2][0][23:0], chi_out_4[2][0][31:24]};
-        assign rho_east_4[2][1] = {chi_out_4[2][3][23:0], chi_out_4[2][3][31:24]};
-        assign rho_east_4[2][0] = {chi_out_4[2][2][23:0], chi_out_4[2][2][31:24]};
-
-        assign rho_east_4[1][3] = {chi_out_4[1][3][30:0], chi_out_4[1][3][31]};  
-        assign rho_east_4[1][2] = {chi_out_4[1][2][30:0], chi_out_4[1][2][31]};
-        assign rho_east_4[1][1] = {chi_out_4[1][1][30:0], chi_out_4[1][1][31]};
-        assign rho_east_4[1][0] = {chi_out_4[1][0][30:0], chi_out_4[1][0][31]};
-       
-       assign rho_east_4[0] = chi_out_4[0];
-
-        logic [383:0] round_out_4;
-        
-        assign round_out_4 = rho_east_4;
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round five///////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-        logic [3:0][31:0] p_5, e_5; 
-        logic [2:0][3:0][31:0] perm_input_5;
-
-        assign perm_input_5 = round_out_4;
-        assign p_5 =  perm_input_5[0]^perm_input_5[1]^perm_input_5[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_5, p_x1_z14_5;
-        assign p_x1_z5_5[3] = {p_5[0][26:0], p_5[0][31:27]}; 
-        assign p_x1_z5_5[2] = {p_5[3][26:0], p_5[3][31:27]}; 
-        assign p_x1_z5_5[1] = {p_5[2][26:0], p_5[2][31:27]}; 
-        assign p_x1_z5_5[0] = {p_5[1][26:0], p_5[1][31:27]};
-
-        assign p_x1_z14_5[3] ={p_5[0][17:0], p_5[0][31:18]};
-        assign p_x1_z14_5[2] ={p_5[3][17:0], p_5[3][31:18]}; 
-        assign p_x1_z14_5[1] ={p_5[2][17:0], p_5[2][31:18]}; 
-        assign p_x1_z14_5[0] ={p_5[1][17:0], p_5[1][31:18]};  
-
-        assign e_5 = p_x1_z5_5^p_x1_z14_5;
-
-        logic [2:0][3:0][31:0] theta_out_5;
-
-        assign theta_out_5[2] = perm_input_5[2]^e_5;
-        assign theta_out_5[1] = perm_input_5[1]^e_5;
-        assign theta_out_5[0] = perm_input_5[0]^e_5;
-
-        logic [2:0][3:0][31:0] rho_west_5;
-     
-        assign rho_west_5[2][3] = {theta_out_5[2][3][20:0] , theta_out_5[2][3][31:21]};
-        assign rho_west_5[2][2] = {theta_out_5[2][2][20:0] , theta_out_5[2][2][31:21]};
-        assign rho_west_5[2][1] = {theta_out_5[2][1][20:0] , theta_out_5[2][1][31:21]};
-        assign rho_west_5[2][0] = {theta_out_5[2][0][20:0] , theta_out_5[2][0][31:21]};
-
-        assign rho_west_5[1][3] = theta_out_5[1][0];
-        assign rho_west_5[1][2] = theta_out_5[1][3];
-        assign rho_west_5[1][1] = theta_out_5[1][2];
-        assign rho_west_5[1][0] = theta_out_5[1][1];
-
-assign rho_west_5[0][3] = theta_out_5[0][3] ^ {32'h14}; 
-        assign rho_west_5[0][2] = theta_out_5[0][2]; 
-        assign rho_west_5[0][1] = theta_out_5[0][1]; 
-assign rho_west_5[0][0] = theta_out_5[0][0];
-          
-
-        logic [2:0][3:0][31:0] chi_out_5;
-
-        assign chi_out_5[2] = rho_west_5[2]^(rho_west_5[1]&~rho_west_5[0]);
-        assign chi_out_5[1] = rho_west_5[1]^(rho_west_5[0]&~rho_west_5[2]);
-        assign chi_out_5[0] = rho_west_5[0]^(rho_west_5[2]&~rho_west_5[1]);
-        
-        logic [2:0][3:0][31:0] rho_east_5;
-      
-        assign rho_east_5[2][3] = {chi_out_5[2][1][23:0], chi_out_5[2][1][31:24]};
-        assign rho_east_5[2][2] = {chi_out_5[2][0][23:0], chi_out_5[2][0][31:24]};
-        assign rho_east_5[2][1] = {chi_out_5[2][3][23:0], chi_out_5[2][3][31:24]};
-        assign rho_east_5[2][0] = {chi_out_5[2][2][23:0], chi_out_5[2][2][31:24]};
-
-        assign rho_east_5[1][3] = {chi_out_5[1][3][30:0], chi_out_5[1][3][31]};  
-        assign rho_east_5[1][2] = {chi_out_5[1][2][30:0], chi_out_5[1][2][31]};
-        assign rho_east_5[1][1] = {chi_out_5[1][1][30:0], chi_out_5[1][1][31]};
-        assign rho_east_5[1][0] = {chi_out_5[1][0][30:0], chi_out_5[1][0][31]};
-       
-       assign rho_east_5[0] = chi_out_5[0];
-
-        logic [383:0] round_out_5;
-        
-        assign round_out_5 = rho_east_5;
-        
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round six////////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        logic [3:0][31:0] p_6, e_6; 
-        logic [2:0][3:0][31:0] perm_input_6;
-
-        assign perm_input_6 = round_out_5;
-        assign p_6 =  perm_input_6[0]^perm_input_6[1]^perm_input_6[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_6, p_x1_z14_6;
-        assign p_x1_z5_6[3] = {p_6[0][26:0], p_6[0][31:27]}; 
-        assign p_x1_z5_6[2] = {p_6[3][26:0], p_6[3][31:27]}; 
-        assign p_x1_z5_6[1] = {p_6[2][26:0], p_6[2][31:27]}; 
-        assign p_x1_z5_6[0] = {p_6[1][26:0], p_6[1][31:27]};
-
-        assign p_x1_z14_6[3] ={p_6[0][17:0], p_6[0][31:18]};
-        assign p_x1_z14_6[2] ={p_6[3][17:0], p_6[3][31:18]}; 
-        assign p_x1_z14_6[1] ={p_6[2][17:0], p_6[2][31:18]}; 
-        assign p_x1_z14_6[0] ={p_6[1][17:0], p_6[1][31:18]};  
-
-        assign e_6 = p_x1_z5_6^p_x1_z14_6;
-
-        logic [2:0][3:0][31:0] theta_out_6;
-
-        assign theta_out_6[2] = perm_input_6[2]^e_6;
-        assign theta_out_6[1] = perm_input_6[1]^e_6;
-        assign theta_out_6[0] = perm_input_6[0]^e_6;
-
-        logic [2:0][3:0][31:0] rho_west_6;
-
-        assign rho_west_6[2][3] = {theta_out_6[2][3][20:0] , theta_out_6[2][3][31:21]};
-        assign rho_west_6[2][2] = {theta_out_6[2][2][20:0] , theta_out_6[2][2][31:21]};
-        assign rho_west_6[2][1] = {theta_out_6[2][1][20:0] , theta_out_6[2][1][31:21]};
-        assign rho_west_6[2][0] = {theta_out_6[2][0][20:0] , theta_out_6[2][0][31:21]};
-
-        assign rho_west_6[1][3] = theta_out_6[1][0];
-        assign rho_west_6[1][2] = theta_out_6[1][3];
-        assign rho_west_6[1][1] = theta_out_6[1][2];
-        assign rho_west_6[1][0] = theta_out_6[1][1];
-
-assign rho_west_6[0][3] = theta_out_6[0][3] ^ {32'h60}; 
-        assign rho_west_6[0][2] = theta_out_6[0][2]; 
-        assign rho_west_6[0][1] = theta_out_6[0][1]; 
-assign rho_west_6[0][0] = theta_out_6[0][0];// ^ CIBOX[rnd_cnt]; Should be this one but it's not.  
-          
-
-        logic [2:0][3:0][31:0] chi_out_6;
-
-        assign chi_out_6[2] = rho_west_6[2]^(rho_west_6[1]&~rho_west_6[0]);
-        assign chi_out_6[1] = rho_west_6[1]^(rho_west_6[0]&~rho_west_6[2]);
-        assign chi_out_6[0] = rho_west_6[0]^(rho_west_6[2]&~rho_west_6[1]);
-        
-        
-        logic [2:0][3:0][31:0] rho_east_6;
-        
-        assign rho_east_6[2][3] = {chi_out_6[2][1][23:0], chi_out_6[2][1][31:24]};
-        assign rho_east_6[2][2] = {chi_out_6[2][0][23:0], chi_out_6[2][0][31:24]};
-        assign rho_east_6[2][1] = {chi_out_6[2][3][23:0], chi_out_6[2][3][31:24]};
-        assign rho_east_6[2][0] = {chi_out_6[2][2][23:0], chi_out_6[2][2][31:24]};
-
-        assign rho_east_6[1][3] = {chi_out_6[1][3][30:0], chi_out_6[1][3][31]};  
-        assign rho_east_6[1][2] = {chi_out_6[1][2][30:0], chi_out_6[1][2][31]};
-        assign rho_east_6[1][1] = {chi_out_6[1][1][30:0], chi_out_6[1][1][31]};
-        assign rho_east_6[1][0] = {chi_out_6[1][0][30:0], chi_out_6[1][0][31]};
-       
-       assign rho_east_6[0] = chi_out_6[0];
-
-        logic [383:0] round_out_6;
-        
-        assign round_out_6 = rho_east_6;
-
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round seven//////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        logic [3:0][31:0] p_7, e_7; 
-        logic [2:0][3:0][31:0] perm_input_7;
-
-        assign perm_input_7 = round_out_6;
-        assign p_7 =  perm_input_7[0]^perm_input_7[1]^perm_input_7[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_7, p_x1_z14_7;
-        assign p_x1_z5_7[3] = {p_7[0][26:0], p_7[0][31:27]}; 
-        assign p_x1_z5_7[2] = {p_7[3][26:0], p_7[3][31:27]}; 
-        assign p_x1_z5_7[1] = {p_7[2][26:0], p_7[2][31:27]}; 
-        assign p_x1_z5_7[0] = {p_7[1][26:0], p_7[1][31:27]};
-
-        assign p_x1_z14_7[3] ={p_7[0][17:0], p_7[0][31:18]};
-        assign p_x1_z14_7[2] ={p_7[3][17:0], p_7[3][31:18]}; 
-        assign p_x1_z14_7[1] ={p_7[2][17:0], p_7[2][31:18]}; 
-        assign p_x1_z14_7[0] ={p_7[1][17:0], p_7[1][31:18]};  
-
-        assign e_7 = p_x1_z5_7^p_x1_z14_7;
-
-        logic [2:0][3:0][31:0] theta_out_7;
-
-        assign theta_out_7[2] = perm_input_7[2]^e_7;
-        assign theta_out_7[1] = perm_input_7[1]^e_7;
-        assign theta_out_7[0] = perm_input_7[0]^e_7;
-        
-        logic [2:0][3:0][31:0] rho_west_7;
-     
-        assign rho_west_7[2][3] = {theta_out_7[2][3][20:0] , theta_out_7[2][3][31:21]};
-        assign rho_west_7[2][2] = {theta_out_7[2][2][20:0] , theta_out_7[2][2][31:21]};
-        assign rho_west_7[2][1] = {theta_out_7[2][1][20:0] , theta_out_7[2][1][31:21]};
-        assign rho_west_7[2][0] = {theta_out_7[2][0][20:0] , theta_out_7[2][0][31:21]};
-
-        assign rho_west_7[1][3] = theta_out_7[1][0];
-        assign rho_west_7[1][2] = theta_out_7[1][3];
-        assign rho_west_7[1][1] = theta_out_7[1][2];
-        assign rho_west_7[1][0] = theta_out_7[1][1];
-        
-assign rho_west_7[0][3] = theta_out_7[0][3] ^ {32'h2c}; 
-        assign rho_west_7[0][2] = theta_out_7[0][2]; 
-        assign rho_west_7[0][1] = theta_out_7[0][1]; 
-assign rho_west_7[0][0] = theta_out_7[0][0];
-          
-        logic [2:0][3:0][31:0] chi_out_7;
-
-        assign chi_out_7[2] = rho_west_7[2]^(rho_west_7[1]&~rho_west_7[0]);
-        assign chi_out_7[1] = rho_west_7[1]^(rho_west_7[0]&~rho_west_7[2]);
-        assign chi_out_7[0] = rho_west_7[0]^(rho_west_7[2]&~rho_west_7[1]);
-        
-        logic [2:0][3:0][31:0] rho_east_7;
-      
-        assign rho_east_7[2][3] = {chi_out_7[2][1][23:0], chi_out_7[2][1][31:24]};
-        assign rho_east_7[2][2] = {chi_out_7[2][0][23:0], chi_out_7[2][0][31:24]};
-        assign rho_east_7[2][1] = {chi_out_7[2][3][23:0], chi_out_7[2][3][31:24]};
-        assign rho_east_7[2][0] = {chi_out_7[2][2][23:0], chi_out_7[2][2][31:24]};
-
-        assign rho_east_7[1][3] = {chi_out_7[1][3][30:0], chi_out_7[1][3][31]};  
-        assign rho_east_7[1][2] = {chi_out_7[1][2][30:0], chi_out_7[1][2][31]};
-        assign rho_east_7[1][1] = {chi_out_7[1][1][30:0], chi_out_7[1][1][31]};
-        assign rho_east_7[1][0] = {chi_out_7[1][0][30:0], chi_out_7[1][0][31]};
-       
-       assign rho_east_7[0] = chi_out_7[0];
-
-        logic [383:0] round_out_7;
-        
-        assign round_out_7 = rho_east_7;
-
-
-        rregs_en #(384,1) permstatef1 (state_out, reset ? '0 : round_out_7, eph1, run);
-        rregs #(1) run1 (runout, run, eph1); 
-        
-        endmodule: permute47
-        
-        
-        
-        
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round eight//////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-      module permute8b( 
-      
-          input logic          eph1,
-          input logic          reset, 
-           
-          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
-          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
-          
-          output logic [383:0] state_out
-
-      );
-
-
-        //Theta input
-        logic [3:0][31:0] p_8, e_8; 
-        logic [2:0][3:0][31:0] perm_input_8;
-
-        assign perm_input_8 = state_in;
-        assign p_8 =  perm_input_8[0]^perm_input_8[1]^perm_input_8[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_8, p_x1_z14_8;
-        assign p_x1_z5_8[3] = {p_8[0][26:0], p_8[0][31:27]}; 
-        assign p_x1_z5_8[2] = {p_8[3][26:0], p_8[3][31:27]}; 
-        assign p_x1_z5_8[1] = {p_8[2][26:0], p_8[2][31:27]}; 
-        assign p_x1_z5_8[0] = {p_8[1][26:0], p_8[1][31:27]};
-
-        assign p_x1_z14_8[3] ={p_8[0][17:0], p_8[0][31:18]};
-        assign p_x1_z14_8[2] ={p_8[3][17:0], p_8[3][31:18]}; 
-        assign p_x1_z14_8[1] ={p_8[2][17:0], p_8[2][31:18]}; 
-        assign p_x1_z14_8[0] ={p_8[1][17:0], p_8[1][31:18]};  
-
-        assign e_8 = p_x1_z5_8^p_x1_z14_8;
-
-        logic [2:0][3:0][31:0] theta_out_8;
-
-        assign theta_out_8[2] = perm_input_8[2]^e_8;
-        assign theta_out_8[1] = perm_input_8[1]^e_8;
-        assign theta_out_8[0] = perm_input_8[0]^e_8;
-        
-        logic [2:0][3:0][31:0] rho_west_8;
-        
-        assign rho_west_8[2][3] = {theta_out_8[2][3][20:0] , theta_out_8[2][3][31:21]};
-        assign rho_west_8[2][2] = {theta_out_8[2][2][20:0] , theta_out_8[2][2][31:21]};
-        assign rho_west_8[2][1] = {theta_out_8[2][1][20:0] , theta_out_8[2][1][31:21]};
-        assign rho_west_8[2][0] = {theta_out_8[2][0][20:0] , theta_out_8[2][0][31:21]};
-
-        assign rho_west_8[1][3] = theta_out_8[1][0];
-        assign rho_west_8[1][2] = theta_out_8[1][3];
-        assign rho_west_8[1][1] = theta_out_8[1][2];
-        assign rho_west_8[1][0] = theta_out_8[1][1];
-        
-assign rho_west_8[0][3] = theta_out_8[0][3] ^ {32'h380}; 
-          assign rho_west_8[0][2] = theta_out_8[0][2]; 
-          assign rho_west_8[0][1] = theta_out_8[0][1]; 
-assign rho_west_8[0][0] = theta_out_8[0][0];
-
-        logic [2:0][3:0][31:0] chi_out_8;
-
-        assign chi_out_8[2] = rho_west_8[2]^(rho_west_8[1]&~rho_west_8[0]);
-        assign chi_out_8[1] = rho_west_8[1]^(rho_west_8[0]&~rho_west_8[2]);
-        assign chi_out_8[0] = rho_west_8[0]^(rho_west_8[2]&~rho_west_8[1]);
-        
-        logic [2:0][3:0][31:0] rho_east_8;
-
-        assign rho_east_8[2][3] = {chi_out_8[2][1][23:0], chi_out_8[2][1][31:24]};
-        assign rho_east_8[2][2] = {chi_out_8[2][0][23:0], chi_out_8[2][0][31:24]};
-        assign rho_east_8[2][1] = {chi_out_8[2][3][23:0], chi_out_8[2][3][31:24]};
-        assign rho_east_8[2][0] = {chi_out_8[2][2][23:0], chi_out_8[2][2][31:24]};
-
-        assign rho_east_8[1][3] = {chi_out_8[1][3][30:0], chi_out_8[1][3][31]};  
-        assign rho_east_8[1][2] = {chi_out_8[1][2][30:0], chi_out_8[1][2][31]};
-        assign rho_east_8[1][1] = {chi_out_8[1][1][30:0], chi_out_8[1][1][31]};
-        assign rho_east_8[1][0] = {chi_out_8[1][0][30:0], chi_out_8[1][0][31]};
-       
-       assign rho_east_8[0] = chi_out_8[0];
-
-        logic [383:0] round_out_8;
-        
-        assign round_out_8 = rho_east_8;
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round nine///////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        logic [3:0][31:0] p_9, e_9; 
-        logic [2:0][3:0][31:0] perm_input_9;
-
-        assign perm_input_9 = round_out_8;
-        assign p_9 =  perm_input_9[0]^perm_input_9[1]^perm_input_9[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_9, p_x1_z14_9;
-        assign p_x1_z5_9[3] = {p_9[0][26:0], p_9[0][31:27]}; 
-        assign p_x1_z5_9[2] = {p_9[3][26:0], p_9[3][31:27]}; 
-        assign p_x1_z5_9[1] = {p_9[2][26:0], p_9[2][31:27]}; 
-        assign p_x1_z5_9[0] = {p_9[1][26:0], p_9[1][31:27]};
-
-        assign p_x1_z14_9[3] ={p_9[0][17:0], p_9[0][31:18]};
-        assign p_x1_z14_9[2] ={p_9[3][17:0], p_9[3][31:18]}; 
-        assign p_x1_z14_9[1] ={p_9[2][17:0], p_9[2][31:18]}; 
-        assign p_x1_z14_9[0] ={p_9[1][17:0], p_9[1][31:18]};  
-
-        assign e_9 = p_x1_z5_9^p_x1_z14_9;
-
-        logic [2:0][3:0][31:0] theta_out_9;
-
-        assign theta_out_9[2] = perm_input_9[2]^e_9;
-        assign theta_out_9[1] = perm_input_9[1]^e_9;
-        assign theta_out_9[0] = perm_input_9[0]^e_9;
-
-        logic [2:0][3:0][31:0] rho_west_9;
-
-        assign rho_west_9[2][3] = {theta_out_9[2][3][20:0] , theta_out_9[2][3][31:21]};
-        assign rho_west_9[2][2] = {theta_out_9[2][2][20:0] , theta_out_9[2][2][31:21]};
-        assign rho_west_9[2][1] = {theta_out_9[2][1][20:0] , theta_out_9[2][1][31:21]};
-        assign rho_west_9[2][0] = {theta_out_9[2][0][20:0] , theta_out_9[2][0][31:21]};
-
-        assign rho_west_9[1][3] = theta_out_9[1][0];
-        assign rho_west_9[1][2] = theta_out_9[1][3];
-        assign rho_west_9[1][1] = theta_out_9[1][2];
-        assign rho_west_9[1][0] = theta_out_9[1][1];
-        
-assign rho_west_9[0][3] = theta_out_9[0][3] ^ {32'hf0}; 
-          assign rho_west_9[0][2] = theta_out_9[0][2]; 
-          assign rho_west_9[0][1] = theta_out_9[0][1]; 
-assign rho_west_9[0][0] = theta_out_9[0][0];
-          
-        logic [2:0][3:0][31:0] chi_out_9;
-
-        assign chi_out_9[2] = rho_west_9[2]^(rho_west_9[1]&~rho_west_9[0]);
-        assign chi_out_9[1] = rho_west_9[1]^(rho_west_9[0]&~rho_west_9[2]);
-        assign chi_out_9[0] = rho_west_9[0]^(rho_west_9[2]&~rho_west_9[1]);
-        
-        
-        logic [2:0][3:0][31:0] rho_east_9;
-        
-        assign rho_east_9[2][3] = {chi_out_9[2][1][23:0], chi_out_9[2][1][31:24]};
-        assign rho_east_9[2][2] = {chi_out_9[2][0][23:0], chi_out_9[2][0][31:24]};
-        assign rho_east_9[2][1] = {chi_out_9[2][3][23:0], chi_out_9[2][3][31:24]};
-        assign rho_east_9[2][0] = {chi_out_9[2][2][23:0], chi_out_9[2][2][31:24]};
-
-        assign rho_east_9[1][3] = {chi_out_9[1][3][30:0], chi_out_9[1][3][31]};  
-        assign rho_east_9[1][2] = {chi_out_9[1][2][30:0], chi_out_9[1][2][31]};
-        assign rho_east_9[1][1] = {chi_out_9[1][1][30:0], chi_out_9[1][1][31]};
-        assign rho_east_9[1][0] = {chi_out_9[1][0][30:0], chi_out_9[1][0][31]};
-       
-       assign rho_east_9[0] = chi_out_9[0];
-
-        logic [383:0] round_out_9;
-        
-        assign round_out_9 = rho_east_9;
-
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round a//////////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        
-        logic [3:0][31:0] p_a, e_a; 
-        logic [2:0][3:0][31:0] perm_input_a;
-
-        assign perm_input_a = round_out_9;
-        assign p_a =  perm_input_a[0]^perm_input_a[1]^perm_input_a[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_a, p_x1_z14_a;
-        assign p_x1_z5_a[3] = {p_a[0][26:0], p_a[0][31:27]}; 
-        assign p_x1_z5_a[2] = {p_a[3][26:0], p_a[3][31:27]}; 
-        assign p_x1_z5_a[1] = {p_a[2][26:0], p_a[2][31:27]}; 
-        assign p_x1_z5_a[0] = {p_a[1][26:0], p_a[1][31:27]};
-
-        assign p_x1_z14_a[3] ={p_a[0][17:0], p_a[0][31:18]};
-        assign p_x1_z14_a[2] ={p_a[3][17:0], p_a[3][31:18]}; 
-        assign p_x1_z14_a[1] ={p_a[2][17:0], p_a[2][31:18]}; 
-        assign p_x1_z14_a[0] ={p_a[1][17:0], p_a[1][31:18]};  
-
-        assign e_a = p_x1_z5_a^p_x1_z14_a;
-
-        logic [2:0][3:0][31:0] theta_out_a;
-
-        assign theta_out_a[2] = perm_input_a[2]^e_a;
-        assign theta_out_a[1] = perm_input_a[1]^e_a;
-        assign theta_out_a[0] = perm_input_a[0]^e_a;
-
-        logic [2:0][3:0][31:0] rho_west_a;
-
-        assign rho_west_a[2][3] = {theta_out_a[2][3][20:0] , theta_out_a[2][3][31:21]};
-        assign rho_west_a[2][2] = {theta_out_a[2][2][20:0] , theta_out_a[2][2][31:21]};
-        assign rho_west_a[2][1] = {theta_out_a[2][1][20:0] , theta_out_a[2][1][31:21]};
-        assign rho_west_a[2][0] = {theta_out_a[2][0][20:0] , theta_out_a[2][0][31:21]};
-
-        assign rho_west_a[1][3] = theta_out_a[1][0];
-        assign rho_west_a[1][2] = theta_out_a[1][3];
-        assign rho_west_a[1][1] = theta_out_a[1][2];
-        assign rho_west_a[1][0] = theta_out_a[1][1];
-        
-assign rho_west_a[0][3] = theta_out_a[0][3] ^ {32'h1a0}; 
-          assign rho_west_a[0][2] = theta_out_a[0][2]; 
-          assign rho_west_a[0][1] = theta_out_a[0][1]; 
-assign rho_west_a[0][0] = theta_out_a[0][0];
-          
-
-        logic [2:0][3:0][31:0] chi_out_a;
-
-        assign chi_out_a[2] = rho_west_a[2]^(rho_west_a[1]&~rho_west_a[0]);
-        assign chi_out_a[1] = rho_west_a[1]^(rho_west_a[0]&~rho_west_a[2]);
-        assign chi_out_a[0] = rho_west_a[0]^(rho_west_a[2]&~rho_west_a[1]);
-        
-        logic [2:0][3:0][31:0] rho_east_a;
-
-        assign rho_east_a[2][3] = {chi_out_a[2][1][23:0], chi_out_a[2][1][31:24]};
-        assign rho_east_a[2][2] = {chi_out_a[2][0][23:0], chi_out_a[2][0][31:24]};
-        assign rho_east_a[2][1] = {chi_out_a[2][3][23:0], chi_out_a[2][3][31:24]};
-        assign rho_east_a[2][0] = {chi_out_a[2][2][23:0], chi_out_a[2][2][31:24]};
-
-        assign rho_east_a[1][3] = {chi_out_a[1][3][30:0], chi_out_a[1][3][31]};  
-        assign rho_east_a[1][2] = {chi_out_a[1][2][30:0], chi_out_a[1][2][31]};
-        assign rho_east_a[1][1] = {chi_out_a[1][1][30:0], chi_out_a[1][1][31]};
-        assign rho_east_a[1][0] = {chi_out_a[1][0][30:0], chi_out_a[1][0][31]};
-       
-       assign rho_east_a[0] = chi_out_a[0];
-
-        logic [383:0] round_out_a;
-        
-        assign round_out_a = rho_east_a;    
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round b//////////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        
-        logic [3:0][31:0] p_b, e_b; 
-        logic [2:0][3:0][31:0] perm_input_b;
-
-        assign perm_input_b = round_out_a;
-        assign p_b =  perm_input_b[0]^perm_input_b[1]^perm_input_b[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_b, p_x1_z14_b;
-        assign p_x1_z5_b[3] = {p_b[0][26:0], p_b[0][31:27]}; 
-        assign p_x1_z5_b[2] = {p_b[3][26:0], p_b[3][31:27]}; 
-        assign p_x1_z5_b[1] = {p_b[2][26:0], p_b[2][31:27]}; 
-        assign p_x1_z5_b[0] = {p_b[1][26:0], p_b[1][31:27]};
-
-        assign p_x1_z14_b[3] ={p_b[0][17:0], p_b[0][31:18]};
-        assign p_x1_z14_b[2] ={p_b[3][17:0], p_b[3][31:18]}; 
-        assign p_x1_z14_b[1] ={p_b[2][17:0], p_b[2][31:18]}; 
-        assign p_x1_z14_b[0] ={p_b[1][17:0], p_b[1][31:18]};  
-
-        assign e_b = p_x1_z5_b^p_x1_z14_b;
-
-        logic [2:0][3:0][31:0] theta_out_b;
-
-        assign theta_out_b[2] = perm_input_b[2]^e_b;
-        assign theta_out_b[1] = perm_input_b[1]^e_b;
-        assign theta_out_b[0] = perm_input_b[0]^e_b;
-        
-        logic [2:0][3:0][31:0] rho_west_b;
-
-        assign rho_west_b[2][3] = {theta_out_b[2][3][20:0] , theta_out_b[2][3][31:21]};
-        assign rho_west_b[2][2] = {theta_out_b[2][2][20:0] , theta_out_b[2][2][31:21]};
-        assign rho_west_b[2][1] = {theta_out_b[2][1][20:0] , theta_out_b[2][1][31:21]};
-        assign rho_west_b[2][0] = {theta_out_b[2][0][20:0] , theta_out_b[2][0][31:21]};
-
-        assign rho_west_b[1][3] = theta_out_b[1][0];
-        assign rho_west_b[1][2] = theta_out_b[1][3];
-        assign rho_west_b[1][1] = theta_out_b[1][2];
-        assign rho_west_b[1][0] = theta_out_b[1][1];
-        
-assign rho_west_b[0][3] = theta_out_b[0][3] ^ {32'h12}; 
-          assign rho_west_b[0][2] = theta_out_b[0][2]; 
-          assign rho_west_b[0][1] = theta_out_b[0][1]; 
-assign rho_west_b[0][0] = theta_out_b[0][0];// ^ CIBOX[rnd_cnt]; Should be this one but it's not.  
-          
-
-        logic [2:0][3:0][31:0] chi_out_b;
-
-        assign chi_out_b[2] = rho_west_b[2]^(rho_west_b[1]&~rho_west_b[0]);
-        assign chi_out_b[1] = rho_west_b[1]^(rho_west_b[0]&~rho_west_b[2]);
-        assign chi_out_b[0] = rho_west_b[0]^(rho_west_b[2]&~rho_west_b[1]);
-        
-        logic [2:0][3:0][31:0] rho_east_b;
-
-        assign rho_east_b[2][3] = {chi_out_b[2][1][23:0], chi_out_b[2][1][31:24]};
-        assign rho_east_b[2][2] = {chi_out_b[2][0][23:0], chi_out_b[2][0][31:24]};
-        assign rho_east_b[2][1] = {chi_out_b[2][3][23:0], chi_out_b[2][3][31:24]};
-        assign rho_east_b[2][0] = {chi_out_b[2][2][23:0], chi_out_b[2][2][31:24]};
-
-        assign rho_east_b[1][3] = {chi_out_b[1][3][30:0], chi_out_b[1][3][31]};  
-        assign rho_east_b[1][2] = {chi_out_b[1][2][30:0], chi_out_b[1][2][31]};
-        assign rho_east_b[1][1] = {chi_out_b[1][1][30:0], chi_out_b[1][1][31]};
-        assign rho_east_b[1][0] = {chi_out_b[1][0][30:0], chi_out_b[1][0][31]};
-       
-        assign rho_east_b[0] = chi_out_b[0];
-
-        logic [383:0] round_out_b;
-        
-        assign round_out_b = rho_east_b;    
-        
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        //Round b was the last round.  The bits are now reconcatenated for output//////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        
-        logic [383:0] perm_reconcat;
-        assign perm_reconcat = {  round_out_b[103:96] ,round_out_b[111:104],round_out_b[119:112],round_out_b[127:120],
-                                  round_out_b[71:64]  ,round_out_b[79:72]  ,round_out_b[87:80]  ,round_out_b[95:88],
-                                  round_out_b[39:32]  ,round_out_b[47:40]  ,round_out_b[55:48]  ,round_out_b[63:56],
-                                  round_out_b[7:0]    ,round_out_b[15:8]   ,round_out_b[23:16]  ,round_out_b[31:24],                          
-                                  
-                                  round_out_b[231:224],round_out_b[239:232],round_out_b[247:240],round_out_b[255:248],
-                                  round_out_b[199:192],round_out_b[207:200],round_out_b[215:208],round_out_b[223:216],
-                                  round_out_b[167:160],round_out_b[175:168],round_out_b[183:176],round_out_b[191:184],
-                                  round_out_b[135:128],round_out_b[143:136],round_out_b[151:144],round_out_b[159:152],
-                                  
-                                  round_out_b[359:352],round_out_b[367:360],round_out_b[375:368], round_out_b[383:376],
-                                  round_out_b[327:320],round_out_b[335:328],round_out_b[343:336],round_out_b[351:344],
-                                  round_out_b[295:288],round_out_b[303:296],round_out_b[311:304],round_out_b[319:312],
-                                  round_out_b[263:256],round_out_b[271:264],round_out_b[279:272],round_out_b[287:280]
-                                };
-      
-      rregs_en #(384,1) permstate (state_out, reset ? '0 : perm_reconcat, eph1, run); 
-            
-        endmodule: permute8b
-
- 
- 
  
      
