@@ -17,6 +17,8 @@
           output logic            verify
           
         );
+				
+				//Parameter definitions are on line 128 and 129.
 
         /* The Keyed mode encryption is defined in section 1.2.2 of "Xoodyak, a lightweight
            cryptographic scheme."  Specifically, the following steps must be accomplished in sequence4
@@ -123,9 +125,8 @@
           //Or the same as the amount of registers, if you begin counting at zero.  
           //state_ctr counts how many state changes remain in an operation. 
           
-          localparam logic [2:0] PERM_INIT = 3'h2;   
-//        localparam logic [2:0] STATE_CTR_INIT = 3'h4; //traditional
-          localparam logic [2:0] STATE_CTR_INIT = 3'h3; //gimmick
+          parameter logic [2:0] PERM_INIT = 3'h3;   
+          parameter logic [2:0] STATE_CTR_INIT = 3'h3; //gimmick
           assign op_switch_next = (perm_ctr == 3'h0);
             
             //test
@@ -176,29 +177,14 @@
         //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
         
       
-        
-        
-            //----------------------------------------------------------------
-            //Permute Inputs --- Traditional 
-            //----------------------------------------------------------------        
-             
-        logic [383:0] permute_in, permute_out, absorb_out ;
-        logic perm_done, start_flags;             
-            
-  /*          
-        rmuxdx4_im #(384) permin (permute_in,
-              sm_nonce    , state_initial,  
-              sm_asso     , absorb_out,   
-              sm_enc      , {absorb_out[383:8], ~absorb_out[7], absorb_out[6:0]},                 
-              sm_sqz      , sqz_in
-        ); 
-   
-    */
-        
             //----------------------------------------------------------------
             //Permute Inputs --- gimmick
             //----------------------------------------------------------------        
             
+        logic [383:0] permute_in, permute_out, absorb_out ;
+        logic perm_done, start_flags;             
+            
+
         rmuxdx3_im #(384) permin (permute_in,
               sm_asso      , state_initial,   
               sm_enc       , {absorb_out[383:8], ~absorb_out[7], absorb_out[6:0]},  //crypt input.                
@@ -210,7 +196,7 @@
             //Xoodyak Permute --- Instantiates the permute module 
             //----------------------------------------------------------------                
           
-          permute xoopermute(
+          permute #(PERM_INIT) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
               .run           (~sm_idle),
@@ -218,7 +204,7 @@
               .sbox_ctrl     (perm_ctr),
               .state_out     (permute_out)
           );    
-          
+    					
             //----------------------------------------------------------------
             //Permute post processing --- Modifies the permute output for recyclying.             
             //----------------------------------------------------------------          
@@ -253,12 +239,12 @@
  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
  
      
-      module permute( 
+      module permute #(parameter PERM_CTR=3)( 
       
           input logic          eph1,
           input logic          reset, 
            
-          input logic           run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
+          input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
           input logic  [2:0]   sbox_ctrl, 
           
@@ -306,17 +292,17 @@
         
 
       logic  [383:0] state_interm;      
-      logic [3:0][11:0] SBOX0, SBOX1, SBOX2, SBOX3;
-      assign SBOX0 = { 12'h58 ,  12'h120,  12'h380 }; 
-      assign SBOX1 = { 12'h38 ,  12'h14 ,  12'hF0  };      
-      assign SBOX2 = { 12'h3c0,  12'h60 ,  12'h1A0 };  
-      assign SBOX3 = { 12'hD0 ,  12'h2c ,  12'h12  };  
+      logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
+      assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
+      assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
+      assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
+
+
   
       logic [11:0] sbox_rnd0, sbox_rnd1, sbox_rnd2, sbox_rnd3;
       assign sbox_rnd0 = SBOX0[sbox_ctrl];
       assign sbox_rnd1 = SBOX1[sbox_ctrl];
-      assign sbox_rnd2 = SBOX2[sbox_ctrl];
-      assign sbox_rnd3 = SBOX3[sbox_ctrl];      
+      assign sbox_rnd2 = SBOX2[sbox_ctrl]; 
       
         //Greek syms.  θ ρwest ι Χ ρeast
         //The CIBOX constants, retained for reference, are: '{ 32'h58, 32'h38, 32'h3c0, 32'hD0, 32'h120, 32'h14, 32'h60, 32'h2c, 32'h380, 32'hF0, 32'h1A0, 32'h12}; 
@@ -340,7 +326,7 @@
                           state_in[263:256],state_in[271:264],state_in[279:272],state_in[287:280]
                           };
     
-     assign permin = (sbox_ctrl == 3'h2) ? bits_le : state_recycle;  
+     assign permin = (sbox_ctrl == PERM_CTR) ? bits_le : state_recycle;  
       
       permute_rnd perm3( 
       
@@ -351,7 +337,6 @@
           .rc0  (sbox_rnd0),
           .rc1  (sbox_rnd1),
           .rc2  (sbox_rnd2),
-          .rc3  (sbox_rnd3),
           .state_in  (permin),
           
           .state_out (state_interm)
@@ -390,8 +375,7 @@
           input logic           run,  
           input logic [11:0]    rc0,
           input logic [11:0]    rc1,
-          input logic [11:0]    rc2,
-          input logic [11:0]    rc3,          
+          input logic [11:0]    rc2,       
           
           input logic  [383:0]  state_in,  //Indicies: plane, lane, zed
           
@@ -413,7 +397,7 @@
         assign perm_input_0 = state_in;
         
         // P <- A0 + A1 + A2
-        assign p_0 =  perm_input_0[0]^perm_input_0[1]^perm_input_0[2];  //Will need to make a better version later.  
+        assign p_0 =  perm_input_0[0]^perm_input_0[1]^perm_input_0[2]; 
 
         // P<<<(1, 5)
         logic [3:0][31:0] p_x1_z5_0, p_x1_z14_0;
@@ -482,7 +466,7 @@ assign rho_west_0[0][0] = theta_out_0[0][0];  //The round constant, 32'h58, shou
         // B0 <- ~A1^A2
         // B1 <- ~A2^A0
         // B2 <- ~A0^A1
-        // Ay <- Ay^By for y{0,1,2{
+        // Ay <- Ay^By for y{0,1,2}
         assign chi_out_0[2] = rho_west_0[2]^(rho_west_0[1]&~rho_west_0[0]);
         assign chi_out_0[1] = rho_west_0[1]^(rho_west_0[0]&~rho_west_0[2]);
         assign chi_out_0[0] = rho_west_0[0]^(rho_west_0[2]&~rho_west_0[1]);
@@ -506,8 +490,8 @@ assign rho_west_0[0][0] = theta_out_0[0][0];  //The round constant, 32'h58, shou
         assign rho_east_0[1][1] = {chi_out_0[1][1][30:0], chi_out_0[1][1][31]};
         assign rho_east_0[1][0] = {chi_out_0[1][0][30:0], chi_out_0[1][0][31]};
        
-       //A0 is not modified. 
-       assign rho_east_0[0] = chi_out_0[0];
+        //A0 is not modified. 
+        assign rho_east_0[0] = chi_out_0[0];
 
        //end ρeast
         
@@ -669,86 +653,8 @@ assign rho_west_2[0][0] = theta_out_2[0][0];
        
        assign rho_east_2[0] = chi_out_2[0];
 
-        logic [383:0] round_out_2;
         
-        assign round_out_2 = rho_east_2;
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////Round three//////////////////////////////////////////////////
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  
-        logic [3:0][31:0] p_3, e_3; 
-        logic [2:0][3:0][31:0] perm_input_3;
-
-        assign perm_input_3 = round_out_2;
-        assign p_3 =  perm_input_3[0]^perm_input_3[1]^perm_input_3[2];  
-
-        
-        logic [3:0][31:0] p_x1_z5_3, p_x1_z14_3;
-        assign p_x1_z5_3[3] = {p_3[0][26:0], p_3[0][31:27]}; 
-        assign p_x1_z5_3[2] = {p_3[3][26:0], p_3[3][31:27]}; 
-        assign p_x1_z5_3[1] = {p_3[2][26:0], p_3[2][31:27]}; 
-        assign p_x1_z5_3[0] = {p_3[1][26:0], p_3[1][31:27]};
-
-        assign p_x1_z14_3[3] ={p_3[0][17:0], p_3[0][31:18]};
-        assign p_x1_z14_3[2] ={p_3[3][17:0], p_3[3][31:18]}; 
-        assign p_x1_z14_3[1] ={p_3[2][17:0], p_3[2][31:18]}; 
-        assign p_x1_z14_3[0] ={p_3[1][17:0], p_3[1][31:18]};  
-
-        assign e_3 = p_x1_z5_3^p_x1_z14_3;
-
-        logic [2:0][3:0][31:0] theta_out_3;
-
-        assign theta_out_3[2] = perm_input_3[2]^e_3;
-        assign theta_out_3[1] = perm_input_3[1]^e_3;
-        assign theta_out_3[0] = perm_input_3[0]^e_3;
-
-        logic [2:0][3:0][31:0] rho_west_3;
-
-     
-        assign rho_west_3[2][3] = {theta_out_3[2][3][20:0] , theta_out_3[2][3][31:21]};
-        assign rho_west_3[2][2] = {theta_out_3[2][2][20:0] , theta_out_3[2][2][31:21]};
-        assign rho_west_3[2][1] = {theta_out_3[2][1][20:0] , theta_out_3[2][1][31:21]};
-        assign rho_west_3[2][0] = {theta_out_3[2][0][20:0] , theta_out_3[2][0][31:21]};
-
-        assign rho_west_3[1][3] = theta_out_3[1][0];
-        assign rho_west_3[1][2] = theta_out_3[1][3];
-        assign rho_west_3[1][1] = theta_out_3[1][2];
-        assign rho_west_3[1][0] = theta_out_3[1][1];
-
-
-assign rho_west_3[0][3][31:12]= theta_out_3[0][3][31:12];
-assign rho_west_3[0][3][11:0] = theta_out_3[0][3][11:0] ^ rc3; 
-          assign rho_west_3[0][2] = theta_out_3[0][2]; 
-          assign rho_west_3[0][1] = theta_out_3[0][1]; 
-assign rho_west_3[0][0] = theta_out_3[0][0];
-          
-
-        logic [2:0][3:0][31:0] chi_out_3;
-
-        assign chi_out_3[2] = rho_west_3[2]^(rho_west_3[1]&~rho_west_3[0]);
-        assign chi_out_3[1] = rho_west_3[1]^(rho_west_3[0]&~rho_west_3[2]);
-        assign chi_out_3[0] = rho_west_3[0]^(rho_west_3[2]&~rho_west_3[1]);
-        
-        //rho_east_3
-        logic [2:0][3:0][31:0] rho_east_3;
-
-        assign rho_east_3[2][3] = {chi_out_3[2][1][23:0], chi_out_3[2][1][31:24]};
-        assign rho_east_3[2][2] = {chi_out_3[2][0][23:0], chi_out_3[2][0][31:24]};
-        assign rho_east_3[2][1] = {chi_out_3[2][3][23:0], chi_out_3[2][3][31:24]};
-        assign rho_east_3[2][0] = {chi_out_3[2][2][23:0], chi_out_3[2][2][31:24]};
-
-        assign rho_east_3[1][3] = {chi_out_3[1][3][30:0], chi_out_3[1][3][31]};  
-        assign rho_east_3[1][2] = {chi_out_3[1][2][30:0], chi_out_3[1][2][31]};
-        assign rho_east_3[1][1] = {chi_out_3[1][1][30:0], chi_out_3[1][1][31]};
-        assign rho_east_3[1][0] = {chi_out_3[1][0][30:0], chi_out_3[1][0][31]};
-       
-       assign rho_east_3[0] = chi_out_3[0];
-
-        logic [383:0] round_out_3;
-        
-        assign state_out = rho_east_3;  
+        assign state_out = rho_east_2;
 
       endmodule: permute_rnd
 
