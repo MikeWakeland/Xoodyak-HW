@@ -108,14 +108,9 @@
 				//Calculates whether we have accomplished at least one full go round while not kicking states. 
 				//Should continue in the yes position until we return to the idle state.  
 				logic continuation; 
-				rregs #(1) bhbefore (continuation, ((op_switch_next & opmode[3]) | continuation) & ~sm_idle, eph1); 
+				rregs #(1) bhbefore (continuation, ~reset &(((op_switch_next & opmode[3]) | continuation) & ~sm_idle), eph1); 
 				
-				
-				
-				
-				
-				
-				
+							
 				logic statechange; 
 				assign statechange = sm_nonce_next | sm_asso_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_ratch_next; //sets the perm counter to three whenever there's a state change on the next clock. 
         
@@ -149,8 +144,8 @@
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------   
     
-          assign sqzdone = sm_finish; 
-          rregs #(1) encflg (encdone, ~reset&sm_enc&op_switch_next, eph1);
+          rregs #(1) encflg (encdone, ~reset&sm_enc&op_switch_next&~opmode[3], eph1);
+					rregs #(1) sqzflg (encdone, ~reset&sm_sqz&op_switch_next&~opmode[3], eph1);
    
 
 
@@ -198,17 +193,31 @@
 
        
         //This mux isn't permin any more, it's the end of a round state.  
+				//Obviously there should never be able to satisfy multiple states....
 			 rmuxdx4_im #(384) permin   (func_outputs,
 			        sm_initial         , state_initial, 
               sm_asso | sm_nonce , absorb_out,   
-              sm_enc             , {absorb_out[383:8], ~absorb_out[7], absorb_out[6:0]},  //crypt input.                
-              sm_sqz             , sqz_in
+              sm_enc             , cryptout,  //crypt input.                
+              sm_sqz             , permute_out
         ); 
         
 				  
                                         
 				rregs_en #(384,1) (saved_state, func_outputs , eph1, op_switch_next); //This is, no kidding, the saved state.  
 				
+				//The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
+		/*
+
+		  logic [191:0] ex_encdone;
+			logic [63:0]  ex_sqzdone;
+			assign ex_encdone =  {192{sm_asso}};
+			assign ex_sqzdone = {64{sm_nonce}};
+
+		
+			
+		assign textout[191:64] = saved_state[383:256] & (ex_encdone | ex_sqzdone); //for which the first 128 bits is the squeeze data, and the entire vector is the cipher text.  
+    //    assign textout[63:0] = saved_state[255:192] & (ex_encdone | ex_sqzdone);
+*/				
 				
 				 ///Adds the Cd value for crypt functions, if applicable. 
 				assign permin_modified =  {func_outputs[383:8], func_outputs[8]^(sm_enc | sm_dec), func_outputs[7:0]}; 
@@ -246,7 +255,7 @@
 //additional logic is required for the final two bits for continuing absorptions.  Cd is zero for continuing absorbs.  				
 		    permute_out[383:256]^(nonce_r&ex_sm_nonce)^(asso_r[351:224]&ex_sm_asso),
 				permute_out[255:249]^(asso_r[223:217]&ex_sm_asso), (permute_out[248]^ex_sm_nonce)^(asso_r[216]^ex_sm_asso),
-				permute_out[247:32]^(asso_r[215:0]&ex_sm_asso), permute_out[31:2], ~permute_out[1:0]^(EXTRALOGICGOESHERE)}; //for nonce absorption.  
+				permute_out[247:32]^(asso_r[215:0]&ex_sm_asso), permute_out[31:2], ~permute_out[1]^continuation , ~permute_out[0]^continuation }; //for nonce absorption.  
 
 
 				
@@ -271,18 +280,7 @@
 				
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////			
 				
-		module absorb (
 
-		input logic eph1,
-		input logic reset,
-		input logic start,
-		
-		input logic [383:0] state_in
-		);
-				
-				
-				
-				
  
  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
  
