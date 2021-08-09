@@ -216,7 +216,7 @@
 		
 			
 		assign textout[191:64] = saved_state[383:256] & (ex_encdone | ex_sqzdone); //for which the first 128 bits is the squeeze data, and the entire vector is the cipher text.  
-    //    assign textout[63:0] = saved_state[255:192] & (ex_encdone | ex_sqzdone);
+    assign textout[63:0] = saved_state[255:192] & (ex_encdone | ex_sqzdone);
 */				
 				
 				 ///Adds the Cd value for crypt functions, if applicable. 
@@ -264,7 +264,7 @@
           //This performs the required manipulation on cipher output.  
           
           assign cryptout = {textin_r^permute_out[383:192], permute_out[191:0]};
-          assign textout = cryptout[383:192];   
+//          assign textout = cryptout[383:192];   
             
           //inputs before permute for squeeze.    
           logic [191:0] perm_select;
@@ -273,7 +273,7 @@
           assign sqz_in = {perm_select, cryptout[191:185] , ~cryptout[184], cryptout[183:7], ~cryptout[6], cryptout[5:0]}; 
           
           //Squeeze outputs:
-          assign authdata = permute_out[383:256];
+//          assign authdata = permute_out[383:256];
         
 
         endmodule: xoodyak_build   
