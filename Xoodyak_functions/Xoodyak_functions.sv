@@ -110,7 +110,7 @@
 	  rregs_en #(1,1) shdwabs (shadow_asso, ~reset&sm_asso, eph1, op_switch_next&~sm_idle); 	
 		
         logic statechange; 
-        assign statechange = sm_nonce_next | sm_asso_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_ratch_next; //sets the perm counter to three whenever there's a state change on the next clock. 
+        assign statechange = sm_idle&(sm_nonce_next | sm_asso_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_ratch_next); //sets the perm counter to three whenever there's a state change on the next clock. 
         
    
             //----------------------------------------------------------------
@@ -126,8 +126,8 @@
           //Or the same as the amount of registers, if you begin counting at zero.  
           //state_ctr counts how many state changes remain in an operation. 
           
-          parameter logic [1:0] PERM_INIT = 2'h2;   
-          assign op_switch_next = (perm_ctr == 3'h0);
+          parameter logic [1:0] PERM_INIT = 2'h3;   
+          assign op_switch_next = (perm_ctr == 2'h0);
 
           assign perm_ctr_next = perm_ctr - 1; 
           rregs #(2) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1);  
@@ -137,8 +137,8 @@
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
 						
-              rregs #(1) opfinish (finished, ~reset&op_switch_next, eph1);
-   
+              //rregs #(1) opfinish (finished, ~reset&op_switch_next, eph1);
+              rregs #(1) opfinish (finished, ~reset&sm_idle, eph1);  
 
 
             //----------------------------------------------------------------
@@ -170,23 +170,31 @@
             //Permute Inputs --- gimmick
             //----------------------------------------------------------------        
             
-        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, permin_modified, saved_state;
+        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, intermux1, intermux2, permin_modified, saved_state;
         logic perm_done, start_flags;             
             
 
        
         //This mux isn't permin any more, it's the end of a round state.  
         //Obviously there should never be able to satisfy multiple states....
-       rmuxdx4_im #(384) permin   (func_outputs,
+       rmuxdx4_im #(384) permin1   (intermux1,
               sm_cyclist         , state_cyclist, 
               sm_asso | sm_nonce , absorb_out,   
               sm_enc             , cryptout,  //crypt input.                
               sm_sqz             , permute_out
         ); 
         
-          
+				rmuxdx4_im #(384) permin2   (intermux2,
+							sm_idle         			, saved_state,  //for looping back to non change the idle state.
+							sm_dec          			, cryptout,  //this is probably wrong  
+							sm_ratch         			, 384'h0 //This is definitely wrong, I still need to code the ratchet function.                 
+				);    
+					
+					assign func_outputs = (sm_cyclist | sm_asso | sm_nonce | sm_enc | sm_sqz) ? intermux1 : intermux2 ; 
+					
+					
                                         
-        rregs_en #(384,1) statesecret (saved_state, reset ? 0' : func_outputs , eph1, op_switch_next | sm_cyclist); //This is, no kidding, the saved state.  
+        rregs_en #(384,1) statesecret (saved_state, reset ? '0 : func_outputs , eph1, (sm_idle&(perm_ctr == 2'h3)) | sm_cyclist | reset); //This is, no kidding, the saved state.  
         
         //The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
       logic [191:0] ex_encdone, ex_sqzdone;
@@ -209,7 +217,7 @@
           permute #(PERM_INIT) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
-              .run           (~sm_idle),
+              .run           (~(sm_idle | sm_cyclist)),
               .state_in      (permin_modified),
               .sbox_ctrl     (perm_ctr),
               .state_out     (permute_out)
@@ -271,7 +279,7 @@
            
           input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
-          input logic  [2:0]   sbox_ctrl, 
+          input logic  [1:0]   sbox_ctrl, 
           
           output logic [383:0] state_out
 

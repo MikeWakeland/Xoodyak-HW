@@ -39,22 +39,38 @@
       
        logic [383:0] state_out;
        logic xood_done, opmode; 	
-       logic[3:0] opmode_t;
+
  logic start_p;
   rregs #(1)  strt (start_p , ~reset , eph1); 
 	assign start = ~start_p & ~reset; 
 	
-	logic [127:0]  nonce_t, asso_data_t, key_t;
+	logic [127:0]  nonce_t, key_t;
+	logic [351:0]  asso_data_t; 
 	logic [191:0] plaintext_t;
 	assign plaintext_t = 192'h4d4e4f5051525354555657584142434445464748494a4b4c;  //ascii text: ABCDEFGHIJKLMNOP QRST UVWX
 	  
 	assign key_t = 128'h38393a3b3c3d3e3f3031323334353637;  //ascii text:  0123456789:;<=>? orig: nonce
 	assign nonce_t= 128'h494a4b4c4d4e4f504142434445464748;  //ascii text: ABCDEFGHIJKLMNOP orig: asso_data
-	assign asso_data_t = 128'h696a6b6c6d6e6f706162636465666768; //ascii text: abcdefghijklmnop orig: key
+	assign asso_data_t = 352'h696a6b6c6d6e6f706162636465666768494a4b4c4d4e4f50414243444546474838393a3b3c3d3e3f30313233; //ascii text: abcdefghijklmnopABCDEFGHIJKLMNOP0123456789:; orig: key
 	
 	
-	
-	assign opmode_t = 4'b0;
+	logic[47:0][3:0] opmode_t;
+	assign opmode_t = {4'h0, 4'h0, 4'h0, 4'h0, 4'h0, 4'h0,
+										 4'h1, 4'h1, 4'h1, 4'h1, 4'h1, 4'h1,
+										 4'h2, 4'h2, 4'h2, 4'h2, 4'h2, 4'h2,
+										 4'h3, 4'h3, 4'h3, 4'h3, 4'h3, 4'h3, 
+										 4'h4, 4'h4, 4'h4, 4'h4, 4'h4, 4'h4,
+										 4'h5, 4'h5, 4'h5, 4'h5, 4'h5, 4'h5, 
+										 4'h6, 4'h6, 4'h6, 4'h6, 4'h6, 4'h6,
+										 4'h7, 4'h7, 4'h7, 4'h7, 4'h7, 4'h7};
+										 
+										 
+	logic [5:0] opmode_ctr, opmode_ctr_next;
+initial opmode_ctr = 6'h2e;
+assign opmode_ctr_next = opmode_ctr - 1;
+rregs #(6) opctr (opmode_ctr, reset | (opmode_ctr == 0) ? 6'h2e : opmode_ctr_next, eph1);	
+logic [3:0] opmode_wire;
+assign opmode_wire=opmode_t[opmode_ctr];
 	
 	
 	
@@ -80,7 +96,7 @@
               .nonce 				(nonce_t),
               .assodata 		(asso_data_t),
               .key 					(key_t),
-              .opmode 			(opmode_t), //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
+              .opmode 			(opmode_t[opmode_ctr]), //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
               .textout 			(textout_t),
               .finished 		(finished_t)
