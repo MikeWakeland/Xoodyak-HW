@@ -96,19 +96,19 @@
         rregs #(1) smno (sm_nonce,  ~reset & sm_nonce_next,  eph1); //Commented when in Gimmick mode.  
         rregs #(1) smas (sm_asso,   ~reset & sm_asso_next,   eph1);
         rregs #(1) smen (sm_enc,    ~reset & sm_enc_next,    eph1);
-        rregs #(1) smde (sm_dec,    ~reset & sm_dec_next,    eph1);				
+        rregs #(1) smde (sm_dec,    ~reset & sm_dec_next,    eph1);        
         rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
-        rregs #(1) smra (sm_ratch,  ~reset & sm_ratch_next,    eph1);				
+        rregs #(1) smra (sm_ratch,  ~reset & sm_ratch_next,    eph1);        
 
         
         //The shadow state is active for certain states if they were the most recent function called before the previous one.
-				//This is important for calculating CD values in certain areas.  
+        //This is important for calculating CD values in certain areas.  
         logic shadow_enc, shadow_dec, shadow_asso;  
 
     rregs_en #(1,1) shdwenc (shadow_enc, ~reset&sm_enc, eph1, op_switch_next&~sm_idle);     
     rregs_en #(1,1) shdwdec (shadow_dec, ~reset&sm_dec, eph1, op_switch_next&~sm_idle);               
-	  rregs_en #(1,1) shdwabs (shadow_asso, ~reset&sm_asso, eph1, op_switch_next&~sm_idle); 	
-		
+    rregs_en #(1,1) shdwabs (shadow_asso, ~reset&sm_asso, eph1, op_switch_next&~sm_idle);   
+    
         logic statechange; 
         assign statechange = sm_idle&(sm_nonce_next | sm_asso_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_ratch_next); //sets the perm counter to three whenever there's a state change on the next clock. 
         
@@ -136,7 +136,7 @@
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
-						
+            
               //rregs #(1) opfinish (finished, ~reset&op_switch_next, eph1);
               rregs #(1) opfinish (finished, ~reset&sm_idle, eph1);  
 
@@ -147,7 +147,7 @@
   
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     key_r,nonce_r;
-					logic [351:0]     assodata_r;
+          logic [351:0]     assodata_r;
          
           logic [383:0] sqz_in; 
         
@@ -160,7 +160,7 @@
 
 
         logic [383:0] state_cyclist;
-				
+        
         assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
         //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
         //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
@@ -184,15 +184,15 @@
               sm_sqz             , permute_out
         ); 
         
-				rmuxdx4_im #(384) permin2   (intermux2,
-							sm_idle         			, saved_state,  //for looping back to non change the idle state.
-							sm_dec          			, cryptout,  //this is probably wrong  
-							sm_ratch         			, 384'h0 //This is definitely wrong, I still need to code the ratchet function.                 
-				);    
-					
-					assign func_outputs = (sm_cyclist | sm_asso | sm_nonce | sm_enc | sm_sqz) ? intermux1 : intermux2 ; 
-					
-					
+        rmuxdx4_im #(384) permin2   (intermux2,
+              sm_idle               , saved_state,  //for looping back to non change the idle state.
+              sm_dec                , cryptout,  //this is probably wrong  
+              sm_ratch               , 384'h0 //This is definitely wrong, I still need to code the ratchet function.                 
+        );    
+          
+          assign func_outputs = (sm_cyclist | sm_asso | sm_nonce | sm_enc | sm_sqz) ? intermux1 : intermux2 ; 
+          
+          
                                         
         rregs_en #(384,1) statesecret (saved_state, reset ? '0 : func_outputs , eph1, (sm_idle&(perm_ctr == 2'h3)) | sm_cyclist | reset); //This is, no kidding, the saved state.  
         
@@ -208,8 +208,8 @@
         
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
         assign permin_modified =  {saved_state[383:8], saved_state[8]^((sm_enc & ~shadow_enc) | (sm_dec & ~shadow_dec)), saved_state[7:0]}; 
-				
-				
+        
+        
             //----------------------------------------------------------------
             //Xoodyak Permute --- Instantiates the permute module 
             //----------------------------------------------------------------                
