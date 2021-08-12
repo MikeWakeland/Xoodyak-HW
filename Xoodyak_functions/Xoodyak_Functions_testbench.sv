@@ -56,8 +56,8 @@
 												192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0};
 	assign key_t = 128'h38393a3b3c3d3e3f3031323334353637;  //ascii text:  0123456789:;<=>? orig: nonce
 	assign nonce_t= 128'h494a4b4c4d4e4f504142434445464748;  //ascii text: ABCDEFGHIJKLMNOP orig: asso_data
-	assign asso_data_t = 352'h696a6b6c6d6e6f706162636465666768494a4b4c4d4e4f50414243444546474838393a3b3c3d3e3f30313233; //ascii text: abcdefghijklmnopABCDEFGHIJKLMNOP0123456789:; orig: key
-	
+	assign asso_data_t = 352'h696162636465666768696a6b6c6d6e6f704142434445464748494a4b4c4d4e4f50303132333435363738393a; //ascii text: abcdefghijklmnopABCDEFGHIJKLMNOP0123456789:; orig: key
+	//use SOFTWARE text to generate the hex values to run through hardware.  THis is much more robust.  
 	
 	logic[47:0][3:0] opmode_t;
 	assign opmode_t = {4'h0, 4'h0, 4'h0, 4'h0, 4'h0, 4'h0,

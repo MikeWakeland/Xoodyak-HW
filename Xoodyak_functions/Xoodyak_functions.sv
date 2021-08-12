@@ -216,8 +216,8 @@ assign sm_sky_next=1'b0;
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
          logic [7:0] cd;
-         assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), (sm_sqz_next|sm_sqz), 2'b0, (sm_sky_next|sm_sky) | (sm_asso_next|sm_asso), (sm_rat_next|sm_rat) | (sm_asso_next|sm_asso)};
-         assign permin_modified =  {saved_state[383:8], saved_state[7:4]^cd, saved_state[3:0]};       
+         assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), (sm_sqz_next|sm_sqz), (sm_sky_next|sm_sky), (sm_rat_next|sm_rat), 4'h0};
+         assign permin_modified =  {saved_state[383:8], saved_state[7:0]^cd};       
 //These lines are wrong.  03 is not the same config as 40 etc.  So the cd vector is wrong.  
 
          
@@ -254,7 +254,7 @@ assign sm_sky_next=1'b0;
 //additional logic is required for the final two bits for continuing absorptions.  Cd is zero for continuing absorbs.          
         permute_out[383:256]^(nonce_r&ex_sm_non[215:88])^(assodata_r[351:224]&ex_sm_asso[215:88]),
         permute_out[255:249]^(assodata_r[223:217]&ex_sm_asso[6:0]), (permute_out[248]^sm_non)^(assodata_r[216]&ex_sm_asso[0]),
-        permute_out[247:32]^(assodata_r[215:0]&ex_sm_asso), permute_out[31:2], permute_out[1]^(sm_asso|sm_non), permute_out[0]^(sm_asso|sm_non)}; //for nonce absorption.  
+        permute_out[247:32]^(assodata_r[215:0]&ex_sm_asso), permute_out[31:25], permute_out[24]^(sm_asso), permute_out[23:2], permute_out[1]^(sm_asso|sm_non), permute_out[0]^(sm_asso|sm_non)}; //for nonce absorption.  
 
        
         
