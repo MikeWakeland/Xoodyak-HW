@@ -71,54 +71,59 @@
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //----------------------------------------------------------------
-        logic                    sm_idle,  sm_cyclist, sm_run, sm_finish, sm_idle_next, sm_cyclist_next,  sm_nonce_next, op_switch_next,
-                                 sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_nonce, sm_dec_next, sm_dec,
-                                 sm_ratch, sm_ratch_next; 
+        logic                    sm_idle,  sm_cyc, sm_run, sm_finish, sm_idle_next, sm_cyc_next,  sm_non_next, op_switch_next,
+                                 sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
+                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next; 
         logic   [127:0]          plain_text_r, round_recycle;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
         logic                    opmode_r;  //the opmode is 1 for decryption and 0 for encryption.  
 
-        assign run =  sm_cyclist | sm_nonce | sm_asso | sm_enc  | sm_dec | sm_sqz | sm_ratch; //sm_nonce;
+        assign run =  sm_cyc | sm_non | sm_asso | sm_enc  | sm_dec | sm_sqz | sm_rat; //sm_non;
         //FSM
 
- assign sm_idle_next     = (sm_idle & (opmode[2:0] == 3'b000)) | (op_switch_next & run) | sm_cyclist;
- assign sm_cyclist_next  = (sm_idle & (opmode[2:0] == 3'b001)) ;       //Am I going to let the user boot me out of a state?   No.  
- assign sm_nonce_next    = (sm_idle & (opmode[2:0] == 3'b010)) | (sm_nonce &  ~op_switch_next);  //& ~(sm_cyclist |            sm_asso | sm_enc  | sm_dec | sm_sqz | sm_ratch);
- assign sm_asso_next     = (sm_idle & (opmode[2:0] == 3'b011)) | (sm_asso  &  ~op_switch_next); //& ~(sm_cyclist | sm_nonce |           sm_enc  | sm_dec | sm_sqz | sm_ratch);
- assign sm_enc_next      = (sm_idle & (opmode[2:0] == 3'b100)) | (sm_enc   &  ~op_switch_next); //& ~(sm_cyclist | sm_nonce | sm_asso |           sm_dec | sm_sqz | sm_ratch); 
- assign sm_dec_next      = (sm_idle & (opmode[2:0] == 3'b101)) | (sm_dec   &  ~op_switch_next); //& ~(sm_cyclist | sm_nonce | sm_asso | sm_enc  |          sm_sqz | sm_ratch); 
- assign sm_sqz_next      = (sm_idle & (opmode[2:0] == 3'b110)) | (sm_sqz   &  ~op_switch_next); //& ~(sm_cyclist | sm_nonce | sm_asso | sm_enc  | sm_dec          | sm_ratch);  
- assign sm_ratch_next    = (sm_idle & (opmode[2:0] == 3'b111)) | (sm_ratch &  ~op_switch_next); //& ~(sm_cyclist | sm_nonce | sm_asso | sm_enc  | sm_dec | sm_sqz)           ;
-
+       assign sm_idle_next     = (sm_idle & (opmode[2:0] == 3'b000)) | (op_switch_next & run) | sm_cyc;
+       assign sm_cyc_next       = (sm_idle & (opmode[2:0] == 3'b001)) ;       //Am I going to let the user boot me out of a state?   No.  
+       assign sm_non_next       = (sm_idle & (opmode[2:0] == 3'b010)) | (sm_non   &  ~op_switch_next); 
+       assign sm_asso_next     = (sm_idle & (opmode[2:0] == 3'b011)) | (sm_asso  &  ~op_switch_next); 
+       assign sm_enc_next      = (sm_idle & (opmode[2:0] == 3'b100)) | (sm_enc   &  ~op_switch_next);
+       assign sm_dec_next      = (sm_idle & (opmode[2:0] == 3'b101)) | (sm_dec   &  ~op_switch_next); 
+       assign sm_sqz_next      = (sm_idle & (opmode[2:0] == 3'b110)) | (sm_sqz   &  ~op_switch_next);  
+       assign sm_rat_next       = (sm_idle & (opmode[2:0] == 3'b111)) | (sm_rat   &  ~op_switch_next); 
+assign sm_sky = 1'b0;
+assign sm_sky_next=1'b0;
         
         rregs #(1) smir (sm_idle,    reset | sm_idle_next,   eph1);
-        rregs #(1) smsr (sm_cyclist,~reset & sm_cyclist_next,  eph1);
-        rregs #(1) smno (sm_nonce,  ~reset & sm_nonce_next,  eph1); //Commented when in Gimmick mode.  
+        rregs #(1) smsr (sm_cyc,~reset & sm_cyc_next,  eph1);
+        rregs #(1) smno (sm_non,  ~reset & sm_non_next,  eph1); //Commented when in Gimmick mode.  
         rregs #(1) smas (sm_asso,   ~reset & sm_asso_next,   eph1);
         rregs #(1) smen (sm_enc,    ~reset & sm_enc_next,    eph1);
         rregs #(1) smde (sm_dec,    ~reset & sm_dec_next,    eph1);        
         rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
-        rregs #(1) smra (sm_ratch,  ~reset & sm_ratch_next,    eph1);        
+        rregs #(1) smra (sm_rat,  ~reset & sm_rat_next,    eph1);        
 
         
         //The shadow state is active for certain states if they were the most recent function called before the previous one.
         //This is important for calculating CD values in certain areas.  
-        logic shadow_enc, shadow_dec, shadow_asso;  
+        logic shadow_cyc, shadow_non, shadow_asso, shadow_enc, shadow_dec, shadow_sqz, shadow_rat ;  
 
-    rregs_en #(1,1) shdwenc (shadow_enc, ~reset&sm_enc, eph1, op_switch_next&~sm_idle);     
-    rregs_en #(1,1) shdwdec (shadow_dec, ~reset&sm_dec, eph1, op_switch_next&~sm_idle);               
-    rregs_en #(1,1) shdwabs (shadow_asso, ~reset&sm_asso, eph1, op_switch_next&~sm_idle);   
+    rregs_en #(1,1) shdwcyc (shadow_cyc , ~reset&sm_cyc      , eph1, op_switch_next&~sm_idle);
+    rregs_en #(1,1) shdwnon (shadow_non , ~reset&sm_non      , eph1, op_switch_next&~sm_idle);
+    rregs_en #(1,1) shdwabs (shadow_asso, ~reset&sm_asso    , eph1, op_switch_next&~sm_idle);     
+    rregs_en #(1,1) shdwenc (shadow_enc , ~reset&sm_enc      , eph1, op_switch_next&~sm_idle);     
+    rregs_en #(1,1) shdwdec (shadow_dec , ~reset&sm_dec      , eph1, op_switch_next&~sm_idle);            
+    rregs_en #(1,1) shdwsqz (shadow_sqz , ~reset&sm_sqz      , eph1, op_switch_next&~sm_idle);
+    rregs_en #(1,1) shdwrat (shadow_rat , ~reset&sm_rat      , eph1, op_switch_next&~sm_idle);        
+  
     
         logic statechange; 
-        assign statechange = sm_idle&(sm_nonce_next | sm_asso_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_ratch_next); //sets the perm counter to three whenever there's a state change on the next clock. 
+        assign statechange = sm_idle&(sm_non_next | sm_asso_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_rat_next); //sets the perm counter to three whenever there's a state change on the next clock. 
         
    
             //----------------------------------------------------------------
             //State Counters.  Counts how many clocks remain before a state change. 
             //----------------------------------------------------------------   
           
-          logic [1:0] perm_ctr,  perm_ctr_next,  state_ctr, state_ctr_next;
-          logic    auth_start, crypt_start;           
+          logic [2:0] perm_ctr,  perm_ctr_next;      
           
           //The initial counter values change based on how many clocks it takes to perform a permute,
           //And whether the "gimmick" is active.  If the "gimmick" is active, STATE_CTR_INIT is 3 instead of 4.  
@@ -126,20 +131,19 @@
           //Or the same as the amount of registers, if you begin counting at zero.  
           //state_ctr counts how many state changes remain in an operation. 
           
-          parameter logic [1:0] PERM_INIT = 2'h3;   
-          assign op_switch_next = (perm_ctr == 2'h0);
+          parameter logic [2:0] PERM_INIT = 3'h4;   
+          assign op_switch_next = (perm_ctr == 3'h0);
 
           assign perm_ctr_next = perm_ctr - 1; 
-          rregs #(2) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1);  
+                    
+          rregs #(3) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1);  
 
 
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
             
-              //rregs #(1) opfinish (finished, ~reset&op_switch_next, eph1);
-              rregs #(1) opfinish (finished, ~reset&sm_idle, eph1);  
-
+            assign finished = ~reset&sm_idle; 
 
             //----------------------------------------------------------------
             //Register Xoodyak's inputs. 
@@ -172,43 +176,51 @@
             
         logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, intermux1, intermux2, permin_modified, saved_state;
         logic perm_done, start_flags;             
-            
+             logic [383:0] cryptout;   
 
        
         //This mux isn't permin any more, it's the end of a round state.  
         //Obviously there should never be able to satisfy multiple states....
-       rmuxdx4_im #(384) permin1   (intermux1,
-              sm_cyclist         , state_cyclist, 
-              sm_asso | sm_nonce , absorb_out,   
-              sm_enc             , cryptout,  //crypt input.                
-              sm_sqz             , permute_out
+        //If I change the selector pins to the shadow state I don't think I'll have to use a register to store the state since only one 
+        //shadow state should be active at a time. 
+        
+       rmuxdx4_im #(384) permin1   (intermux1, 
+              sm_cyc               , state_cyclist, 
+              sm_asso | sm_non    , absorb_out,   
+              sm_enc               , cryptout,  //crypt input.                
+              sm_sqz               , permute_out
         ); 
         
         rmuxdx4_im #(384) permin2   (intermux2,
               sm_idle               , saved_state,  //for looping back to non change the idle state.
               sm_dec                , cryptout,  //this is probably wrong  
-              sm_ratch               , 384'h0 //This is definitely wrong, I still need to code the ratchet function.                 
+              sm_rat                , 384'h0 //This is definitely wrong, I still need to code the ratchet function.                 
         );    
           
-          assign func_outputs = (sm_cyclist | sm_asso | sm_nonce | sm_enc | sm_sqz) ? intermux1 : intermux2 ; 
+          assign func_outputs = (sm_cyc | sm_asso | sm_non | sm_enc | sm_sqz) ? intermux1 : intermux2 ; 
           
           
                                         
-        rregs_en #(384,1) statesecret (saved_state, reset ? '0 : func_outputs , eph1, (sm_idle&(perm_ctr == 2'h3)) | sm_cyclist | reset); //This is, no kidding, the saved state.  
+        rregs_en #(384,1) statesecret (saved_state, reset ? '0 : func_outputs , eph1, (~sm_idle | reset)); //This is, no kidding, the saved state.  
         
         //The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
       logic [191:0] ex_encdone, ex_sqzdone;
 
-      assign ex_encdone =  {192{sm_enc}};  //asso was here?
-      assign ex_sqzdone = {192{sm_sqz}};   // nonce waas here?
+      assign ex_encdone =  {128{shadow_enc}};  //asso was here?
+      assign ex_sqzdone = {128{shadow_sqz}};   // nonce waas here?
 
     assign textout[191:64] = saved_state[383:256] & (ex_encdone | ex_sqzdone); //for which the first 128 bits is the squeeze data, and the entire vector is the cipher text.  
-    assign textout[63:0]   = saved_state[255:192] &  ex_encdone               ;
+    assign textout[63:0]   = saved_state[255:192] &  ex_encdone[63:0]        ;
        
         
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
-        assign permin_modified =  {saved_state[383:8], saved_state[8]^((sm_enc & ~shadow_enc) | (sm_dec & ~shadow_dec)), saved_state[7:0]}; 
-        
+         //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
+         logic [7:0] cd;
+         assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), (sm_sqz_next|sm_sqz), 2'b0, (sm_sky_next|sm_sky) | (sm_asso_next|sm_asso), (sm_rat_next|sm_rat) | (sm_asso_next|sm_asso)};
+         assign permin_modified =  {saved_state[383:8], saved_state[7:4]^cd, saved_state[3:0]};       
+//These lines are wrong.  03 is not the same config as 40 etc.  So the cd vector is wrong.  
+
+         
         
             //----------------------------------------------------------------
             //Xoodyak Permute --- Instantiates the permute module 
@@ -217,7 +229,7 @@
           permute #(PERM_INIT) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
-              .run           (~(sm_idle | sm_cyclist)),
+              .run           (~(sm_idle | sm_cyc)),
               .state_in      (permin_modified),
               .sbox_ctrl     (perm_ctr),
               .state_out     (permute_out)
@@ -229,29 +241,27 @@
           
           //This performs the absorb manipulation required on the permute output:
           //For DOWN(extra_data,8'h03)
-          logic [383:0] state_temp, cryptout; 
-          logic [127:0] extra_data;
-          
-     //     assign extra_data = sm_asso ? assodata_r : nonce_r ;
-     //     assign state_temp = extra_data^permute_out[383:256]; //Absorbs the nonce or AD from bytes 0-15 inclusive
+       
+ 
+
           // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
     
-      logic [215:0] ex_sm_asso, ex_sm_nonce;
+      logic [215:0] ex_sm_asso, ex_sm_non;
       assign ex_sm_asso =  {216{sm_asso}};
-      assign ex_sm_nonce = {216{sm_nonce}};
+      assign ex_sm_non = {216{sm_non}};
     
         assign absorb_out ={ //Calculates the output of the DOWN() absorb of both nonce and a 224 bit absorption with boolean algebra. 
 //additional logic is required for the final two bits for continuing absorptions.  Cd is zero for continuing absorbs.          
-        permute_out[383:256]^(nonce_r&ex_sm_nonce)^(assodata_r[351:224]&ex_sm_asso),
-        permute_out[255:249]^(assodata_r[223:217]&ex_sm_asso), (permute_out[248]^ex_sm_nonce)^(assodata_r[216]^ex_sm_asso),
-        permute_out[247:32]^(assodata_r[215:0]&ex_sm_asso), permute_out[31:2], ~permute_out[1]^shadow_asso , ~permute_out[0]^shadow_asso }; //for nonce absorption.  
+        permute_out[383:256]^(nonce_r&ex_sm_non[215:88])^(assodata_r[351:224]&ex_sm_asso[215:88]),
+        permute_out[255:249]^(assodata_r[223:217]&ex_sm_asso[6:0]), (permute_out[248]^sm_non)^(assodata_r[216]&ex_sm_asso[0]),
+        permute_out[247:32]^(assodata_r[215:0]&ex_sm_asso), permute_out[31:2], permute_out[1]^(sm_asso|sm_non), permute_out[0]^(sm_asso|sm_non)}; //for nonce absorption.  
 
        
         
           //This performs the required manipulation on cipher output.  
           
-          assign cryptout = {textin_r^permute_out[383:192], permute_out[191:0]};
-//          assign textout = cryptout[383:192];   
+          assign cryptout = {textin_r^permute_out[383:192],permute_out[191:185], ~permute_out[184] ,  permute_out[183:0]};
+//                                                                                    ^^^^ This term was conspicuously absent ('01'), but clearly algoirthmically required.  
             
           //inputs before permute for squeeze.    
           logic [191:0] perm_select;
@@ -279,7 +289,7 @@
            
           input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
-          input logic  [1:0]   sbox_ctrl, 
+          input logic  [2:0]   sbox_ctrl, 
           
           output logic [383:0] state_out
 
@@ -325,7 +335,7 @@
         
 
       logic  [383:0] state_interm;      
-      logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
+      logic [4:1][11:0] SBOX0, SBOX1, SBOX2;
       assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
       assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
       assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
@@ -363,10 +373,6 @@
       
       permute_rnd perm3( 
       
-          .eph1  (eph1),
-          .reset  (reset),
-           
-          .run  (run),
           .rc0  (sbox_rnd0),
           .rc1  (sbox_rnd1),
           .rc2  (sbox_rnd2),
@@ -402,10 +408,7 @@
  
        module permute_rnd( 
       
-          input logic          eph1,
-          input logic          reset, 
-           
-          input logic           run,  
+         
           input logic [11:0]    rc0,
           input logic [11:0]    rc1,
           input logic [11:0]    rc2,       
