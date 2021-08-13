@@ -192,7 +192,7 @@ assign sm_sky_next=1'b0;
         ); 
         
         rmuxdx4_im #(384) permin2   (intermux2,
-              sm_idle               , saved_state,  //for looping back to non change the idle state.
+              sm_idle               , saved_state,  //This is technically dead code.  
               sm_dec                , cryptout,  //this is probably wrong  
               sm_rat                , 384'h0 //This is definitely wrong, I still need to code the ratchet function.                 
         );    
@@ -216,7 +216,8 @@ assign sm_sky_next=1'b0;
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
          logic [7:0] cd;
-         assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), (sm_sqz_next|sm_sqz), (sm_sky_next|sm_sky), (sm_rat_next|sm_rat), 4'h0};
+         assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), (sm_sqz_next|sm_sqz), (sm_sky_next|sm_sky) , (sm_rat_next|sm_rat), 4'h0};
+																																																										      // 0 in hash mode. 
          assign permin_modified =  {saved_state[383:8], saved_state[7:0]^cd};       
 //These lines are wrong.  03 is not the same config as 40 etc.  So the cd vector is wrong.  
 
