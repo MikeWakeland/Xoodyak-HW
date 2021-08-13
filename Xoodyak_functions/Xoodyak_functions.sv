@@ -1,4 +1,36 @@
-        module xoodyak_build(
+/*Weird comments:
+
+1.  Calls to the squeeze function set the state "up" but never "down." Does this cause a deadlock, algorithmically speaking?
+2.  The user isn't prevented from making illogical function calls (keyed calls in hash mode etc)
+
+Tested functions:
+Cyclist(keyed)
+nonce(keyed)
+Absorb() short and long
+Encrypt() short and long
+Decrypt() short and long
+squeeze(keyed) short
+
+
+
+Still need to:
+1. Remove dead/spaghetti code from the permute input muxes.
+2. Remove the register in front of the permute input and adjust counters accordingly.
+3. Figure out ratchet()
+4. Implement hash mode. (have already done hash cyclist())
+5. Figure out what I'm going to do about squeezekey.  
+6. Delete most comments since they are obsolete.  
+
+
+
+
+*/      
+
+
+
+
+
+			module xoodyak_build(
           input logic             eph1,
           input logic             reset,
           input logic             start,
@@ -73,7 +105,7 @@
             //----------------------------------------------------------------
         logic                    sm_idle,  sm_cyc, sm_run, sm_finish, sm_idle_next, sm_cyc_next,  sm_non_next, op_switch_next,
                                  sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
-                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next; 
+                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode; 
         logic   [127:0]          plain_text_r, round_recycle;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
         logic                    opmode_r;  //the opmode is 1 for decryption and 0 for encryption.  
@@ -81,25 +113,29 @@
         assign run =  sm_cyc | sm_non | sm_asso | sm_enc  | sm_dec | sm_sqz | sm_rat; //sm_non;
         //FSM
 
-       assign sm_idle_next     = (sm_idle & (opmode[2:0] == 3'b000)) | (op_switch_next & run) | sm_cyc;
-       assign sm_cyc_next       = (sm_idle & (opmode[2:0] == 3'b001)) ;       //Am I going to let the user boot me out of a state?   No.  
-       assign sm_non_next       = (sm_idle & (opmode[2:0] == 3'b010)) | (sm_non   &  ~op_switch_next); 
-       assign sm_asso_next     = (sm_idle & (opmode[2:0] == 3'b011)) | (sm_asso  &  ~op_switch_next); 
-       assign sm_enc_next      = (sm_idle & (opmode[2:0] == 3'b100)) | (sm_enc   &  ~op_switch_next);
-       assign sm_dec_next      = (sm_idle & (opmode[2:0] == 3'b101)) | (sm_dec   &  ~op_switch_next); 
-       assign sm_sqz_next      = (sm_idle & (opmode[2:0] == 3'b110)) | (sm_sqz   &  ~op_switch_next);  
-       assign sm_rat_next       = (sm_idle & (opmode[2:0] == 3'b111)) | (sm_rat   &  ~op_switch_next); 
-assign sm_sky = 1'b0;
-assign sm_sky_next=1'b0;
+       assign sm_idle_next      = (sm_idle & (opmode[3:0] == 4'b0000)) | (op_switch_next & run) | sm_cyc;
+       assign sm_cyc_next       = (sm_idle & (opmode[2:0] == 3'b001)) ;       //This is different from the others since both 0001 and 1001 are cyclist states.    
+       assign sm_non_next       = (sm_idle & (opmode[3:0] == 4'b0010)) | (sm_non   &  ~op_switch_next); 
+       assign sm_asso_next      = (sm_idle & (opmode[2:0] ==  3'b011)) | (sm_asso  &  ~op_switch_next); // Not Keymode only
+       assign sm_enc_next       = (sm_idle & (opmode[3:0] == 4'b0100)) | (sm_enc   &  ~op_switch_next);
+       assign sm_dec_next       = (sm_idle & (opmode[3:0] == 4'b0101)) | (sm_dec   &  ~op_switch_next); 
+       assign sm_sqz_next       = (sm_idle & (opmode[2:0] ==  3'b110)) | (sm_sqz   &  ~op_switch_next);   //Not keyed mode only.
+       assign sm_rat_next       = (sm_idle & (opmode[3:0] == 4'b0111)) | (sm_rat   &  ~op_switch_next); 
+			 assign sm_sky = 1'b0;
+			 assign sm_sky_next=1'b0;
+			 assign hash_mode = opmode[3];
+			 
+			 
+			 
         
         rregs #(1) smir (sm_idle,    reset | sm_idle_next,   eph1);
-        rregs #(1) smsr (sm_cyc,~reset & sm_cyc_next,  eph1);
-        rregs #(1) smno (sm_non,  ~reset & sm_non_next,  eph1); //Commented when in Gimmick mode.  
+        rregs #(1) smsr (sm_cyc,    ~reset & sm_cyc_next,  eph1);
+        rregs #(1) smno (sm_non,    ~reset & sm_non_next,  eph1); //Commented when in Gimmick mode.  
         rregs #(1) smas (sm_asso,   ~reset & sm_asso_next,   eph1);
         rregs #(1) smen (sm_enc,    ~reset & sm_enc_next,    eph1);
         rregs #(1) smde (sm_dec,    ~reset & sm_dec_next,    eph1);        
         rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
-        rregs #(1) smra (sm_rat,  ~reset & sm_rat_next,    eph1);        
+        rregs #(1) smra (sm_rat,    ~reset & sm_rat_next,    eph1);        
 
         
         //The shadow state is active for certain states if they were the most recent function called before the previous one.
@@ -108,7 +144,7 @@ assign sm_sky_next=1'b0;
 
     rregs_en #(1,1) shdwcyc (shadow_cyc , ~reset&sm_cyc      , eph1, op_switch_next&~sm_idle);
     rregs_en #(1,1) shdwnon (shadow_non , ~reset&sm_non      , eph1, op_switch_next&~sm_idle);
-    rregs_en #(1,1) shdwabs (shadow_asso, ~reset&sm_asso    , eph1, op_switch_next&~sm_idle);     
+    rregs_en #(1,1) shdwabs (shadow_asso, ~reset&sm_asso     , eph1, op_switch_next&~sm_idle);     
     rregs_en #(1,1) shdwenc (shadow_enc , ~reset&sm_enc      , eph1, op_switch_next&~sm_idle);     
     rregs_en #(1,1) shdwdec (shadow_dec , ~reset&sm_dec      , eph1, op_switch_next&~sm_idle);            
     rregs_en #(1,1) shdwsqz (shadow_sqz , ~reset&sm_sqz      , eph1, op_switch_next&~sm_idle);
@@ -164,19 +200,22 @@ assign sm_sky_next=1'b0;
 
 
         logic [383:0] state_cyclist;
-        
-        assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2.  
-        //When using the gimmick short message version: assign state_initial = {key,nonce,8'h10,8'h01, 232'h0, 8'h2}; so this enc8() thing just counts the amount 
-        //of bytes that are in the number.  With the gimmick the amount of AD is always 128' and there fore the third argument is always 8'h10.  
+        logic [127:0] ex_hash;
+				assign ex_hash = {182{hash_mode}};
+				
+			  assign state_cyclist = {key_r&~ex_hash,15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
+				//assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
+				// So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
+ 
         
             
             //----------------------------------------------------------------
             //Permute Inputs --- gimmick
             //----------------------------------------------------------------        
             
-        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, intermux1, intermux2, permin_modified, saved_state;
+        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, intermux1, intermux2, permin_modified, saved_state, sqz_state;
         logic perm_done, start_flags;             
-             logic [383:0] cryptout;   
+             logic [383:0] cryptout, decout;   
 
        
         //This mux isn't permin any more, it's the end of a round state.  
@@ -204,14 +243,15 @@ assign sm_sky_next=1'b0;
         rregs_en #(384,1) statesecret (saved_state, reset ? '0 : func_outputs , eph1, (~sm_idle | reset)); //This is, no kidding, the saved state.  
         
         //The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
-      logic [191:0] ex_encdone, ex_sqzdone;
+      logic [191:0] ex_encdone, ex_sqzdone, ex_decdone;
 
       assign ex_encdone =  {128{shadow_enc}};  //asso was here?
       assign ex_sqzdone = {128{shadow_sqz}};   // nonce waas here?
+			assign ex_decdone = {128{shadow_dec}};
 
-    assign textout[191:64] = saved_state[383:256] & (ex_encdone | ex_sqzdone); //for which the first 128 bits is the squeeze data, and the entire vector is the cipher text.  
-    assign textout[63:0]   = saved_state[255:192] &  ex_encdone[63:0]        ;
-       
+    assign textout[191:0] = {saved_state[383:256] & (ex_encdone | ex_sqzdone | ex_decdone )^(ex_decdone&permute_out[383:256]),
+                         		(saved_state[255:192]&(ex_encdone[63:0]|ex_decdone[63:0])^(ex_decdone[63:0]&permute_out[255:192]))}; //for which the first 128 bits is the squeeze data, and the entire vector is the cipher/plain text  
+
         
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
@@ -220,7 +260,8 @@ assign sm_sky_next=1'b0;
 																																																										      // 0 in hash mode. 
          assign permin_modified =  {saved_state[383:8], saved_state[7:0]^cd};       
 //These lines are wrong.  03 is not the same config as 40 etc.  So the cd vector is wrong.  
-
+		
+				assign sqz_state = {permute_out[383:377], permute_out[376]^(shadow_sqz&hash_mode), permute_out[375:0]};
          
         
             //----------------------------------------------------------------
@@ -230,7 +271,7 @@ assign sm_sky_next=1'b0;
           permute #(PERM_INIT) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
-              .run           (~(sm_idle | sm_cyc)),
+              .run           (~(op_switch_next|sm_idle | sm_cyc)),
               .state_in      (permin_modified),
               .sbox_ctrl     (perm_ctr),
               .state_out     (permute_out)
@@ -261,7 +302,10 @@ assign sm_sky_next=1'b0;
         
           //This performs the required manipulation on cipher output.  
           
-          assign cryptout = {textin_r^permute_out[383:192],permute_out[191:185], ~permute_out[184] ,  permute_out[183:0]};
+					logic[191:0] ex_sm_dec;
+					assign ex_sm_dec = {192{sm_dec}};
+					
+          assign cryptout = {textin_r^(permute_out[383:192]&~ex_sm_dec),permute_out[191:185], ~permute_out[184] ,  permute_out[183:0]};
 //                                                                                    ^^^^ This term was conspicuously absent ('01'), but clearly algoirthmically required.  
             
           //inputs before permute for squeeze.    
