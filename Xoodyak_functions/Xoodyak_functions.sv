@@ -160,13 +160,7 @@ Still need to:
             //----------------------------------------------------------------   
           
           logic [2:0] perm_ctr,  perm_ctr_next;      
-          
-          //The initial counter values change based on how many clocks it takes to perform a permute,
-          //And whether the "gimmick" is active.  If the "gimmick" is active, STATE_CTR_INIT is 3 instead of 4.  
-          //perm_ctr counts how many clocks until a state change. The value is 1 less than the amount of registers in permute.  
-          //Or the same as the amount of registers, if you begin counting at zero.  
-          //state_ctr counts how many state changes remain in an operation. 
-          
+
           parameter logic [2:0] PERM_INIT = 3'h4;   
           assign op_switch_next = (perm_ctr == 3'h0);
 
