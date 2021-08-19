@@ -20,6 +20,7 @@ Still need to:
 4. Implement hash mode. (have already done hash cyclist())
 5. Figure out what I'm going to do about squeezekey.  
 6. Delete most comments since they are obsolete.  
+7. Rename asso to absorb data etc.  
 
 
 
@@ -27,10 +28,7 @@ Still need to:
 */      
 
 
-
-
-
-			module xoodyak_build(
+      module xoodyak_build(
           input logic             eph1,
           input logic             reset,
           input logic             start,
@@ -39,7 +37,7 @@ Still need to:
           input logic [127:0]     nonce,
           input logic [351:0]     assodata,
           input logic [127:0]     key,
-          input logic [3:0]       opmode,  //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
+          input logic [4:0]       opmode,  //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
           output logic [191:0]    textout,
           output logic            finished
@@ -65,68 +63,45 @@ Still need to:
                 //----------------------------------------------------------------                
               
            Important information:
-           >This technical briefing describes the intended operation of this module.  It has been thoroughly vetted.  
-            In the event of a conflict between these comments and actual operation, the comments are supreme and the HDL code is implemented incorrectly. 
-           >This technical briefing describes the intended operation of this module.  In the event of a conflict between
-            these comments and the technical description, "Xoodyak, a Lightweight Encryption Scheme" submitted to NIST by Keccak, the 
-            standard is supreme and the implementation is incorrect, although the Keccak team may wish to consider it independently.  
-           >The user is NOT required to supply registered inputs, this is handled internally.
-           >The user may NOT cancel an encipher by supplying another ready signal.  The cipher must run to completion, unless reset is asserted as 1.   
-           >Xoodyak does not recognize a difference between cipher and decypher functions.  "encrypting" the ciphertext output as
-            the input plaintext will yield the ciphertext, provided the correct key and nonce is used to initialize the state.  
-            However, this implementation does feature an encryption/decryption mode.  When the input decryption flag is 0,
-            the squeeze function will generate a tag.  When the decryption flag is 1, the squeeze function will verify the 
-            provided tag/ensure supplied data validation.  
-           >This file occassionally refers to "plaintext" and "ciphertext." In these instances, "plaintext" is always the input, and
-            "ciphertext" is always the output, even though ciphertext can be re-encyphered to plaintext.  
-           >The reset flag zeroes out the permute to kill the state. 
-           >All inputs are registered.
-           >All outputs are registered, **except textout which incurs exactly a one XOR gate delay between the register and the output pin.**         
+     
            
            Xoodyak requires:
-           >The user must continuously assert (1 or 0) start and reset signals.  
-           >The user's inputs must be synchronized with the start signal.
-           >The user may not interrupt a cipher operation.  No inputs are accepted until after the machine returns to the idle state.  
-            
+
             
             Xoodyak produces:
-            >A 192 bit ciphertext
-            >A 128 bit authentication data
-            >A flag to synchronize ciphertext validity. The ciphertext is only valid on the same clock as the encdone flag.
-            >A flag to synchronize authdata validity.  The authdata is only valid on the same clock as the sqzdone flag. 
-            **Caution!  ciphertext and authdata cannot be synchronized due to the nature of the algorithm.  Their offset is exatly the length of one permute function in clocks.**
-            >A flag that verifies that a supplied input text is authentic, that is, the encrypted data has not been altered and therefore generates the same squeeze text as the output.  
-                        
-           
+                 
            */ 
       
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //----------------------------------------------------------------
-        logic                    sm_idle,  sm_cyc, sm_run, sm_finish, sm_idle_next, sm_cyc_next,  sm_non_next, op_switch_next,
+        logic                    sm_idle,  sm_cyc, sm_run, sm_idle_next, sm_run_next, sm_cyc_next,  sm_non_next, op_switch_next,
                                  sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
-                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode; 
+                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode; 
         logic   [127:0]          plain_text_r, round_recycle;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
         logic                    opmode_r;  //the opmode is 1 for decryption and 0 for encryption.  
 
-        assign run =  sm_cyc | sm_non | sm_asso | sm_enc  | sm_dec | sm_sqz | sm_rat; //sm_non;
+        assign run =  sm_cyc | sm_non | sm_asso | sm_enc  | sm_dec | sm_sqz | sm_rat;
+				assign run_next = sm_cyc_next | sm_non_next | sm_asso_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next; //sm_non;
+				
         //FSM
 
-       assign sm_idle_next      = (sm_idle & (opmode[3:0] == 4'b0000)) | (op_switch_next & run) | sm_cyc;
-       assign sm_cyc_next       = (sm_idle & (opmode[2:0] == 3'b001)) ;       //This is different from the others since both 0001 and 1001 are cyclist states.    
-       assign sm_non_next       = (sm_idle & (opmode[3:0] == 4'b0010)) | (sm_non   &  ~op_switch_next); 
-       assign sm_asso_next      = (sm_idle & (opmode[2:0] ==  3'b011)) | (sm_asso  &  ~op_switch_next); // Not Keymode only
-       assign sm_enc_next       = (sm_idle & (opmode[3:0] == 4'b0100)) | (sm_enc   &  ~op_switch_next);
-       assign sm_dec_next       = (sm_idle & (opmode[3:0] == 4'b0101)) | (sm_dec   &  ~op_switch_next); 
-       assign sm_sqz_next       = (sm_idle & (opmode[2:0] ==  3'b110)) | (sm_sqz   &  ~op_switch_next);   //Not keyed mode only.
-       assign sm_rat_next       = (sm_idle & (opmode[3:0] == 4'b0111)) | (sm_rat   &  ~op_switch_next); 
-			 assign sm_sky = 1'b0;
-			 assign sm_sky_next=1'b0;
-			 assign hash_mode = opmode[3];
+       assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc;
+       assign sm_cyc_next       = (sm_idle & (opmode[3:0] == 4'b0001)) ;        
+       assign sm_non_next       = (sm_idle & (opmode[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next); 
+       assign sm_asso_next      = (sm_idle & (opmode[3:0] == 4'b0011)             ) | (sm_asso  &  ~op_switch_next); // Not Keymode only
+       assign sm_enc_next       = (sm_idle & (opmode[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next);
+       assign sm_dec_next       = (sm_idle & (opmode[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next); 
+       assign sm_sqz_next       = (sm_idle & (opmode[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next);   //Not keyed mode only.
+       assign sm_rat_next       = (sm_idle & (opmode[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next); 
+       assign sm_sky_next       = (sm_idle & (opmode[3:0] == 4'b1000) & keyed_mode) | (sm_rat   &  ~op_switch_next); 
 			 
-			 
-			 
+       assign hash_mode = opmode[4];
+			 assign keyed_mode = ~opmode[4];
+       
+       
+       
         
         rregs #(1) smir (sm_idle,    reset | sm_idle_next,   eph1);
         rregs #(1) smsr (sm_cyc,    ~reset & sm_cyc_next,  eph1);
@@ -135,7 +110,8 @@ Still need to:
         rregs #(1) smen (sm_enc,    ~reset & sm_enc_next,    eph1);
         rregs #(1) smde (sm_dec,    ~reset & sm_dec_next,    eph1);        
         rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
-        rregs #(1) smra (sm_rat,    ~reset & sm_rat_next,    eph1);        
+        rregs #(1) smra (sm_rat,    ~reset & sm_rat_next,    eph1);
+        rregs #(1) smsk (sm_sky,    ~reset & sm_sky_next,    eph1);       
 
         
         //The shadow state is active for certain states if they were the most recent function called before the previous one.
@@ -195,11 +171,11 @@ Still need to:
 
         logic [383:0] state_cyclist;
         logic [127:0] ex_hash;
-				assign ex_hash = {182{hash_mode}};
-				
-			  assign state_cyclist = {key_r&~ex_hash,15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
-				//assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
-				// So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
+        assign ex_hash = {182{hash_mode}};
+        
+        assign state_cyclist = {key_r&~ex_hash,15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
+        //assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
+        // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
  
         
             
@@ -207,7 +183,7 @@ Still need to:
             //Permute Inputs --- gimmick
             //----------------------------------------------------------------        
             
-        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, intermux1, intermux2, permin_modified, saved_state, sqz_state;
+        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, intermux1, intermux2, permin_modified, saved_state, sqz_state, rat_state;
         logic perm_done, start_flags;             
              logic [383:0] cryptout, decout;   
 
@@ -217,46 +193,52 @@ Still need to:
         //If I change the selector pins to the shadow state I don't think I'll have to use a register to store the state since only one 
         //shadow state should be active at a time. 
         
-       rmuxdx4_im #(384) permin1   (intermux1, 
-              sm_cyc               , state_cyclist, 
-              sm_asso | sm_non    , absorb_out,   
-              sm_enc               , cryptout,  //crypt input.                
-              sm_sqz               , permute_out
+       rmuxdx4_im #(384) permin1   (func_outputs, 
+              sm_cyc              			, state_cyclist, 
+              sm_asso | sm_non    			, absorb_out,   
+              sm_enc  | sm_dec          , cryptout,  //crypt input.                
+              sm_sqz  | sm_rat | sm_sky , sqz_state
         ); 
         
-        rmuxdx4_im #(384) permin2   (intermux2,
+				
+				
+  /*       rmuxdx4_im #(384) permin2   (intermux2,
               sm_idle               , saved_state,  //This is technically dead code.  
               sm_dec                , cryptout,  //this is probably wrong  
-              sm_rat                , 384'h0 //This is definitely wrong, I still need to code the ratchet function.                 
+              sm_rat                , rat_state //This is definitely wrong, I still need to code the ratchet function.                 
         );    
           
           assign func_outputs = (sm_cyc | sm_asso | sm_non | sm_enc | sm_sqz) ? intermux1 : intermux2 ; 
           
-          
+           */
                                         
         rregs_en #(384,1) statesecret (saved_state, reset ? '0 : func_outputs , eph1, (~sm_idle | reset)); //This is, no kidding, the saved state.  
         
         //The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
-      logic [191:0] ex_encdone, ex_sqzdone, ex_decdone;
+      logic [191:0] ex_encdone, ex_sqzdone, ex_decdone, ex_rat;
 
       assign ex_encdone =  {128{shadow_enc}};  //asso was here?
       assign ex_sqzdone = {128{shadow_sqz}};   // nonce waas here?
-			assign ex_decdone = {128{shadow_dec}};
+      assign ex_decdone = {128{shadow_dec}};
+      assign ex_rat = {128{sm_rat}};
 
     assign textout[191:0] = {saved_state[383:256] & (ex_encdone | ex_sqzdone | ex_decdone )^(ex_decdone&permute_out[383:256]),
-                         		(saved_state[255:192]&(ex_encdone[63:0]|ex_decdone[63:0])^(ex_decdone[63:0]&permute_out[255:192]))}; //for which the first 128 bits is the squeeze data, and the entire vector is the cipher/plain text  
+                             (saved_state[255:192]&(ex_encdone[63:0]|ex_decdone[63:0])^(ex_decdone[63:0]&permute_out[255:192]))}; //for which the first 128 bits is the squeeze data, and the entire vector is the cipher/plain text  
 
         
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
          logic [7:0] cd;
          assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), (sm_sqz_next|sm_sqz), (sm_sky_next|sm_sky) , (sm_rat_next|sm_rat), 4'h0};
-																																																										      // 0 in hash mode. 
+                                                                                                                          // 0 in hash mode. 
          assign permin_modified =  {saved_state[383:8], saved_state[7:0]^cd};       
 //These lines are wrong.  03 is not the same config as 40 etc.  So the cd vector is wrong.  
-		
-				assign sqz_state = {permute_out[383:377], permute_out[376]^(shadow_sqz&hash_mode), permute_out[375:0]};
-         
+    
+        
+				
+				
+				assign sqz_state[384:256] = {permute_out[383:377], permute_out[376]^(shadow_sqz&hash_mode), permute_out[375:256]}&~ex_rat;
+				assign sqz_state[255:0]   = {permute_out[255:249], ~permute_out[248], permute_out[247:0]};         
         
             //----------------------------------------------------------------
             //Xoodyak Permute --- Instantiates the permute module 
@@ -296,9 +278,9 @@ Still need to:
         
           //This performs the required manipulation on cipher output.  
           
-					logic[191:0] ex_sm_dec;
-					assign ex_sm_dec = {192{sm_dec}};
-					
+          logic[191:0] ex_sm_dec;
+          assign ex_sm_dec = {192{sm_dec}};
+          
           assign cryptout = {textin_r^(permute_out[383:192]&~ex_sm_dec),permute_out[191:185], ~permute_out[184] ,  permute_out[183:0]};
 //                                                                                    ^^^^ This term was conspicuously absent ('01'), but clearly algoirthmically required.  
             
@@ -421,7 +403,7 @@ Still need to:
 
       );
       
-      rregs_en #(384,1) permstate (state_recycle, reset ? '0 : state_interm, eph1, run);      
+      rregs_en #(384,1) permstate (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
     
 
       assign state_out = {      state_recycle[103:96] ,state_recycle[111:104],state_recycle[119:112],state_recycle[127:120],
