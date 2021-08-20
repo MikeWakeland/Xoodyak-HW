@@ -2,6 +2,7 @@
 
 1.  Calls to the squeeze function set the state "up" but never "down." Does this cause a deadlock, algorithmically speaking?
 2.  The user isn't prevented from making illogical function calls (keyed calls in hash mode etc)
+3.  Can now support any length hashes in hash mode but the user is required to tell me via opmode if there is more hash required afterwards.  
 
 Tested functions:
 Cyclist(keyed)
@@ -37,7 +38,7 @@ Still need to:
           input logic [127:0]     nonce,
           input logic [351:0]     assodata,
           input logic [127:0]     key,
-          input logic [4:0]       opmode,  //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
+          input logic [5:0]       opmode,  //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
           output logic [191:0]    textout,
           output logic            finished
@@ -77,17 +78,17 @@ Still need to:
             //----------------------------------------------------------------
         logic                    sm_idle,  sm_cyc, sm_run, sm_idle_next, sm_run_next, sm_cyc_next,  sm_non_next, op_switch_next,
                                  sm_asso_next , sm_asso , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
-                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode; 
+                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next, sm_hsq, sm_hsq_next, hash_mode, keyed_mode, hash_more; 
         logic   [127:0]          plain_text_r, round_recycle;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
         logic                    opmode_r;  //the opmode is 1 for decryption and 0 for encryption.  
 
         assign run =  sm_cyc | sm_non | sm_asso | sm_enc  | sm_dec | sm_sqz | sm_rat;
-				assign run_next = sm_cyc_next | sm_non_next | sm_asso_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next; //sm_non;
-				
+        assign run_next = sm_cyc_next | sm_non_next | sm_asso_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next; //sm_non;
+        
         //FSM
 
-       assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc;
+       assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
        assign sm_cyc_next       = (sm_idle & (opmode[3:0] == 4'b0001)) ;        
        assign sm_non_next       = (sm_idle & (opmode[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next); 
        assign sm_asso_next      = (sm_idle & (opmode[3:0] == 4'b0011)             ) | (sm_asso  &  ~op_switch_next); // Not Keymode only
@@ -95,10 +96,12 @@ Still need to:
        assign sm_dec_next       = (sm_idle & (opmode[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next); 
        assign sm_sqz_next       = (sm_idle & (opmode[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next);   //Not keyed mode only.
        assign sm_rat_next       = (sm_idle & (opmode[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next); 
-       assign sm_sky_next       = (sm_idle & (opmode[3:0] == 4'b1000) & keyed_mode) | (sm_rat   &  ~op_switch_next); 
+       assign sm_sky_next       = (sm_idle & (opmode[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next); 
+  //     assign sm_hsq_next       = (sm_idle & (opmode[3:0] == 4'b1001) & hash_mode)  | (sm_hsq   &  ~op_switch_next); 
 			 
-       assign hash_mode = opmode[4];
-			 assign keyed_mode = ~opmode[4];
+       assign hash_more = &opmode[5:4];  //Hash_more says that the user wants at least 128' more data than the existing hash.  
+			 assign hash_mode =   opmode[5];
+       assign keyed_mode = ~opmode[5];
        
        
        
@@ -112,6 +115,7 @@ Still need to:
         rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
         rregs #(1) smra (sm_rat,    ~reset & sm_rat_next,    eph1);
         rregs #(1) smsk (sm_sky,    ~reset & sm_sky_next,    eph1);       
+ //       rregs #(1) smsk (sm_hsq,    ~reset & sm_hsq_next,    eph1); 
 
         
         //The shadow state is active for certain states if they were the most recent function called before the previous one.
@@ -158,8 +162,7 @@ Still need to:
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     key_r,nonce_r;
           logic [351:0]     assodata_r;
-         
-          logic [383:0] sqz_in; 
+        
         
         //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
         rregs_en #(192,1) txtr  ( textin_r           , textin             , eph1, sm_idle);   
@@ -170,10 +173,10 @@ Still need to:
 
 
         logic [383:0] state_cyclist;
-        logic [127:0] ex_hash;
-        assign ex_hash = {182{hash_mode}};
+        logic [215:0] ex_hash;
+        assign ex_hash = {215{hash_mode}};
         
-        assign state_cyclist = {key_r&~ex_hash,15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
+        assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
         //assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
         // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
  
@@ -194,14 +197,14 @@ Still need to:
         //shadow state should be active at a time. 
         
        rmuxdx4_im #(384) permin1   (func_outputs, 
-              sm_cyc              			, state_cyclist, 
-              sm_asso | sm_non    			, absorb_out,   
+              sm_cyc                    , state_cyclist, 
+              sm_asso | sm_non          , absorb_out,   
               sm_enc  | sm_dec          , cryptout,  //crypt input.                
               sm_sqz  | sm_rat | sm_sky , sqz_state
         ); 
         
-				
-				
+        
+        
   /*       rmuxdx4_im #(384) permin2   (intermux2,
               sm_idle               , saved_state,  //This is technically dead code.  
               sm_dec                , cryptout,  //this is probably wrong  
@@ -222,24 +225,31 @@ Still need to:
       assign ex_decdone = {128{shadow_dec}};
       assign ex_rat = {128{sm_rat}};
 
-    assign textout[191:0] = {saved_state[383:256] & (ex_encdone | ex_sqzdone | ex_decdone )^(ex_decdone&permute_out[383:256]),
+    assign textout[191:0] = {(saved_state[383:256] & (ex_encdone))^((ex_decdone|ex_sqzdone)&permute_out[383:256]),
                              (saved_state[255:192]&(ex_encdone[63:0]|ex_decdone[63:0])^(ex_decdone[63:0]&permute_out[255:192]))}; //for which the first 128 bits is the squeeze data, and the entire vector is the cipher/plain text  
 
         
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
          logic [7:0] cd;
-         assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), (sm_sqz_next|sm_sqz), (sm_sky_next|sm_sky) , (sm_rat_next|sm_rat), 4'h0};
+         assign cd = { ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec), ((sm_sqz_next|sm_sqz)&keyed_mode), (sm_sky_next|sm_sky) , (sm_rat_next|sm_rat), 4'h0};
                                                                                                                           // 0 in hash mode. 
-         assign permin_modified =  {saved_state[383:8], saved_state[7:0]^cd};       
-//These lines are wrong.  03 is not the same config as 40 etc.  So the cd vector is wrong.  
-    
         
-				
-				
-				assign sqz_state[384:256] = {permute_out[383:377], permute_out[376]^(shadow_sqz&hash_mode), permute_out[375:256]}&~ex_rat;
-				assign sqz_state[255:0]   = {permute_out[255:249], ~permute_out[248], permute_out[247:0]};         
+
+
+logic [383:0] abs_cyc_hash;
+
+assign abs_cyc_hash = {assodata_r[351:224], 8'h1,  248'h1};
+
+
+
+
+				assign permin_modified =  sm_asso&hash_mode&~shadow_asso&shadow_cyc? abs_cyc_hash : {saved_state[383:8], saved_state[7:0]^cd};             
         
+        
+        assign sqz_state[384:256] = {permute_out[383:377], permute_out[376]^(hash_more), permute_out[375:256]}&~ex_rat;
+        assign sqz_state[255:0]   = {permute_out[255:249], permute_out[248]^(~sm_sqz), permute_out[247:0]};         
+                                                           //~permute_out[248]
             //----------------------------------------------------------------
             //Xoodyak Permute --- Instantiates the permute module 
             //----------------------------------------------------------------                
@@ -268,11 +278,16 @@ Still need to:
       assign ex_sm_asso =  {216{sm_asso}};
       assign ex_sm_non = {216{sm_non}};
     
-        assign absorb_out ={ //Calculates the output of the DOWN() absorb of both nonce and a 224 bit absorption with boolean algebra. 
+       //Calculates the output of the DOWN() absorb of both nonce and a 224 bit absorption with boolean algebra. 
 //additional logic is required for the final two bits for continuing absorptions.  Cd is zero for continuing absorbs.          
-        permute_out[383:256]^(nonce_r&ex_sm_non[215:88])^(assodata_r[351:224]&ex_sm_asso[215:88]),
-        permute_out[255:249]^(assodata_r[223:217]&ex_sm_asso[6:0]), (permute_out[248]^sm_non)^(assodata_r[216]&ex_sm_asso[0]),
-        permute_out[247:32]^(assodata_r[215:0]&ex_sm_asso), permute_out[31:25], permute_out[24]^(sm_asso), permute_out[23:2], permute_out[1]^(sm_asso|sm_non), permute_out[0]^(sm_asso|sm_non)}; //for nonce absorption.  
+       
+			       
+			            
+        assign absorb_out[383:256] = permute_out[383:256]^(nonce_r&ex_sm_non[215:88])^(assodata_r[351:224]&ex_sm_asso[215:88]);
+				assign absorb_out[255:248] = {permute_out[255:249]^(assodata_r[223:217]&ex_sm_asso[6:0]&~ex_hash[6:0]), (permute_out[248]^sm_non)^((assodata_r[216]&ex_sm_asso[0])|hash_mode)};
+				assign absorb_out[247:32]  = {permute_out[247:32]^(assodata_r[215:0]&ex_sm_asso&~ex_hash)};
+        assign absorb_out[31:8]    = {permute_out[31:25], permute_out[24]^(sm_asso&~hash_mode), permute_out[23:8]};
+        assign absorb_out[7:0]     = {permute_out[7:2], permute_out[1]^((sm_asso|sm_non)&keyed_mode), permute_out[0]^((sm_asso&keyed_mode&~shadow_asso)|(sm_non&~shadow_non))}; //for nonce absorption.  
 
        
         
@@ -284,15 +299,7 @@ Still need to:
           assign cryptout = {textin_r^(permute_out[383:192]&~ex_sm_dec),permute_out[191:185], ~permute_out[184] ,  permute_out[183:0]};
 //                                                                                    ^^^^ This term was conspicuously absent ('01'), but clearly algoirthmically required.  
             
-          //inputs before permute for squeeze.    
-          logic [191:0] perm_select;
 
-          assign perm_select = opmode_r ? textin_r : cryptout[383:192]; 
-          assign sqz_in = {perm_select, cryptout[191:185] , ~cryptout[184], cryptout[183:7], ~cryptout[6], cryptout[5:0]}; 
-          
-          //Squeeze outputs:
-//          assign authdata = permute_out[383:256];
-        
 
         endmodule: xoodyak_build   
         

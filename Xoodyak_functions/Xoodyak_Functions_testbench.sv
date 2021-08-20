@@ -59,16 +59,16 @@
 	assign asso_data_t = 352'h696162636465666768696a6b6c6d6e6f704142434445464748494a4b4c4d4e4f50303132333435363738393a; //ascii text: abcdefghijklmnopABCDEFGHIJKLMNOP0123456789:; orig: key
 	//use SOFTWARE text to generate the hex values to run through hardware.  THis is much more robust.  
 	
-	logic[47:0][3:0] opmode_t;
-	assign opmode_t = {4'h0, 4'h0, 4'h0, 4'h0, 4'h0, 4'h0,
-                     4'h1, 4'h1, 4'h1, 4'h1, 4'h1, 4'h1,
-										 4'h1, 4'h1, 4'h1, 4'h1, 4'h1, 4'h1,
-										 4'h2, 4'h2, 4'h2, 4'h2, 4'h3, 4'h3,
-										  4'h3, 4'h3, 4'h3, 4'h3, 4'h3, 4'h3, 
-											4'h3, 4'h3, 4'h3, 4'h3, 4'h3, 4'h3, 
-										 4'h7, 4'h7,  4'h7, 4'h7, 4'h7, 4'h7,
+	logic[47:0][5:0] opmode_t;
+	assign opmode_t = {6'h20, 6'h20, 6'h20, 6'h20, 6'h20, 6'h20,
+                     6'h21, 6'h21, 6'h21, 6'h21, 6'h21, 6'h21,
+										 6'h21, 6'h21, 6'h21, 6'h21, 6'h21, 6'h21,
+										 6'h22, 6'h22, 6'h22, 6'h22, 6'h23, 6'h23,
+										  6'h23, 6'h23, 6'h23, 6'h23, 6'h23, 6'h23, 
+											6'h23, 6'h23, 6'h23, 6'h36, 6'h36, 6'h36, 
+										 6'h36, 6'h36,  6'h36, 6'h36, 6'h36, 6'h36,
 
-										 4'h7, 4'h7, 4'h7, 4'h7, 4'h7, 4'h7
+										 6'h26, 6'h26, 6'h26, 6'h26, 6'h26, 6'h26
 										 };
 										 
 										 
