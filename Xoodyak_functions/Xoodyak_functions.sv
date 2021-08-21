@@ -3,6 +3,8 @@
 1.  Calls to the squeeze function set the state "up" but never "down." Does this cause a deadlock, algorithmically speaking?
 2.  The user isn't prevented from making illogical function calls (keyed calls in hash mode etc)
 3.  Can now support any length hashes in hash mode but the user is required to tell me via opmode if there is more hash required afterwards.  
+4.  Changing the mux output to be default cyclist output means that the user can screw himself by not assertingproper opcodes at all times. 
+		whereas before 
 
 Tested functions:
 Cyclist(keyed)
@@ -82,7 +84,7 @@ Still need to:
         logic   [127:0]          plain_text_r, round_recycle;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
         
-				
+        
         assign run =  sm_cyc | sm_non | sm_abs | sm_enc  | sm_dec | sm_sqz | sm_sky | sm_rat;
         assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
         
@@ -119,14 +121,14 @@ Still need to:
         //This is important for calculating CD values in certain areas.  
         logic shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky ;  
 
-					rregs_en #(1,1) shdwcyc (shadow_cyc , ~reset&sm_cyc      , eph1, op_switch_next&~sm_idle);
-					rregs_en #(1,1) shdwnon (shadow_non , ~reset&sm_non      , eph1, op_switch_next&~sm_idle);
-					rregs_en #(1,1) shdwabs (shadow_abs , ~reset&sm_abs       , eph1, op_switch_next&~sm_idle);     
-					rregs_en #(1,1) shdwenc (shadow_enc , ~reset&sm_enc      , eph1, op_switch_next&~sm_idle);     
-					rregs_en #(1,1) shdwdec (shadow_dec , ~reset&sm_dec      , eph1, op_switch_next&~sm_idle);            
-					rregs_en #(1,1) shdwsqz (shadow_sqz , ~reset&sm_sqz      , eph1, op_switch_next&~sm_idle);
-					rregs_en #(1,1) shdwsky (shadow_sky , ~reset&sm_sky      , eph1, op_switch_next&~sm_idle);
-					rregs_en #(1,1) shdwrat (shadow_rat , ~reset&sm_rat      , eph1, op_switch_next&~sm_idle);        
+          rregs_en #(1,1) shdwcyc (shadow_cyc , ~reset&sm_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
+          rregs_en #(1,1) shdwnon (shadow_non , ~reset&sm_non      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) shdwabs (shadow_abs , ~reset&sm_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) shdwenc (shadow_enc , ~reset&sm_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) shdwdec (shadow_dec , ~reset&sm_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
+          rregs_en #(1,1) shdwsqz (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) shdwsky (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) shdwrat (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
   
     
         logic statechange; 
@@ -139,7 +141,7 @@ Still need to:
           
           logic [2:0] perm_ctr,  perm_ctr_next;      
 
-          parameter logic [2:0] PERM_INIT = 3'h4;   
+          parameter logic [2:0] PERM_INIT = 3'h3;   
           assign op_switch_next = (perm_ctr == 3'h0);
 
           assign perm_ctr_next = perm_ctr - 1; 
@@ -161,14 +163,14 @@ Still need to:
           logic [127:0]     key_r,nonce_r;
           logic [351:0]     absdata_r;
           logic [5:0]       opmode_r; 
-				
+        
         
         //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
         rregs_en #(192,1) txtr  ( textin_r           , textin             , eph1, sm_idle);   
         rregs_en #(128,1) noncr ( nonce_r            , nonce              , eph1, sm_idle);
         rregs_en #(352,1) absdr( absdata_r         , absdata           , eph1, sm_idle);
         rregs_en #(128,1) keyr  ( key_r              , key                , eph1, sm_idle);
-				rregs_en #(6,1)   opmd  (opmode_r 					 , opmode             , eph1, sm_idle);
+        rregs_en #(6,1)   opmd  (opmode_r            , opmode             , eph1, sm_idle);
 
 
         logic [383:0] state_cyclist;
@@ -196,16 +198,18 @@ Still need to:
         //shadow state should be active at a time. 
         
        rmuxdx4_im #(384) permin1   (func_outputs, 
-              sm_cyc                    , state_cyclist, 
-              sm_abs | sm_non          , absorb_out,   
-              sm_enc  | sm_dec          , cryptout,  //crypt input.                
-              sm_sqz  | sm_rat | sm_sky , sqz_state
+              
+							shadow_cyc                           ,state_cyclist,
+              shadow_abs | shadow_non              , absorb_out,   
+              shadow_enc | shadow_dec              , cryptout,  //crypt input.                
+              shadow_sqz | shadow_rat | shadow_sky , sqz_state
+							//                                       state_cyclist
         ); 
         
         
-        
+        assign saved_state = reset? '0: func_outputs;
                                         
-        rregs_en #(384,1) statesecret (saved_state, reset ? '0 : func_outputs , eph1, (~sm_idle | reset)); //This is, no kidding, the saved state.  
+     
         
         //The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
       logic [191:0] ex_encdone, ex_sqzdone, ex_decdone, ex_skydone, ex_rat;
@@ -213,7 +217,7 @@ Still need to:
       assign ex_encdone =  {128{shadow_enc}};  //abs was here?
       assign ex_sqzdone = {128{shadow_sqz}};   // nonce waas here?
       assign ex_decdone = {128{shadow_dec}};
-			assign ex_skydone = {128{shadow_sky}};
+      assign ex_skydone = {128{shadow_sky}};
       assign ex_rat = {128{sm_rat}};
 
     assign textout[191:0] = {(saved_state[383:256] & (ex_encdone))^((ex_decdone|ex_sqzdone|ex_skydone)&permute_out[383:256]),
@@ -354,7 +358,7 @@ assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
         
 
       logic  [383:0] state_interm;      
-      logic [4:1][11:0] SBOX0, SBOX1, SBOX2;
+      logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
       assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
       assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
       assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
