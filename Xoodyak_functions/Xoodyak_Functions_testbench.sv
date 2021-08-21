@@ -56,19 +56,20 @@
 												192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0, 192'h0};*/
 	assign key_t = 128'h38393a3b3c3d3e3f3031323334353637;  //ascii text:  0123456789:;<=>? orig: nonce
 	assign nonce_t= 128'h494a4b4c4d4e4f504142434445464748;  //ascii text: ABCDEFGHIJKLMNOP orig: asso_data
-	assign asso_data_t = 352'h696162636465666768696a6b6c6d6e6f704142434445464748494a4b4c4d4e4f50303132333435363738393a; //ascii text: abcdefghijklmnopABCDEFGHIJKLMNOP0123456789:; orig: key
+	assign asso_data_t = 352'h696162636465666768696a6b6c6d6e6f696162636465696162636465666768696a6b6c6d6e6f696162636465; //ascii text: iabcdefghijklmnoiabcdeiabcdefghijklmnoiabcde orig: key
 	//use SOFTWARE text to generate the hex values to run through hardware.  THis is much more robust.  
 	
 	logic[47:0][5:0] opmode_t;
-	assign opmode_t = {6'h20, 6'h20, 6'h20, 6'h20, 6'h20, 6'h20,
-                     6'h21, 6'h21, 6'h21, 6'h21, 6'h21, 6'h21,
-										 6'h21, 6'h21, 6'h21, 6'h21, 6'h21, 6'h21,
-										 6'h22, 6'h22, 6'h22, 6'h22, 6'h23, 6'h23,
-										  6'h23, 6'h23, 6'h23, 6'h23, 6'h23, 6'h23, 
-											6'h23, 6'h23, 6'h23, 6'h36, 6'h36, 6'h36, 
-										 6'h36, 6'h36,  6'h36, 6'h36, 6'h36, 6'h36,
+	assign opmode_t = {6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
+                     6'h1, 6'h1, 6'h1, 6'h1, 6'h1, 6'h1,
+										 6'h1,
+										 6'h2, 6'h2, 6'h3, 6'h3, 6'h3, 6'h3,
+										  6'h3, 6'h3, 6'h3, 6'h3, 6'h3, 6'h3, 
+											6'h8, 6'h8, 6'h8, 6'h8, 6'h8, 6'h8, 
+										6'h8, 6'h8, 6'h8, 6'h8, 6'h8, 6'h8,
 
-										 6'h26, 6'h26, 6'h26, 6'h26, 6'h26, 6'h26
+										 6'h8, 6'h8, 6'h8, 6'h8, 6'h8, 6'h8,
+										  6'h8, 6'h8, 6'h8, 6'h8, 6'h8, 6'h8
 										 };
 										 
 										 
@@ -120,7 +121,7 @@ assign opmode_wire=opmode_t[opmode_ctr];
           
               .textin  		  (plaintext_t),//Either plain text or cipher text depending on opmode
               .nonce 				(nonce_t),
-              .assodata 		(asso_data_t),
+              .absdata 		  (asso_data_t),
               .key 					(key_t),
               .opmode 			(opmode_t[opmode_ctr]), //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
