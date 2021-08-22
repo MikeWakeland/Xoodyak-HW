@@ -4,7 +4,7 @@
 2.  The user isn't prevented from making illogical function calls (keyed calls in hash mode etc)
 3.  Can now support any length hashes in hash mode but the user is required to tell me via opmode if there is more hash required afterwards.  
 4.  Changing the mux output to be default cyclist output means that the user can screw himself by not assertingproper opcodes at all times. 
-		whereas before 
+    whereas before 
 
 Tested functions:
 Cyclist(keyed)
@@ -33,6 +33,8 @@ Still need to:
 5. Figure out what I'm going to do about squeezekey.  
 6. Delete most comments since they are obsolete.  
 7. Rename asso to absorb data etc.  
+8. Consolidate input vectors 
+9. Don't let the user do extra things (break up opmode bits 5 and 4 vs the others) 
 
 
 
@@ -49,7 +51,7 @@ Still need to:
           input logic [127:0]     nonce,
           input logic [351:0]     absdata,
           input logic [127:0]     key,
-          input logic [5:0]       opmode,  //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: absc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
+          input logic [5:0]       opmode,    
 
           output logic [191:0]    textout,
           output logic            finished
@@ -129,6 +131,18 @@ Still need to:
           rregs_en #(1,1) shdwsqz (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
           rregs_en #(1,1) shdwsky (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
           rregs_en #(1,1) shdwrat (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
+          
+          
+          logic meta_cyc, meta_non, meta_abs, meta_enc, meta_dec, meta_sqz, meta_rat, meta_sky ;  
+
+          rregs_en #(1,1) metacyc (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
+          rregs_en #(1,1) metanon (meta_non , ~reset&shadow_non      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) metaabs (meta_abs , ~reset&shadow_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) metaenc (meta_enc , ~reset&shadow_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) metadec (meta_dec , ~reset&shadow_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
+          rregs_en #(1,1) metasqz (meta_sqz , ~reset&shadow_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) metasky (meta_sky , ~reset&shadow_sky      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) metarat (meta_rat , ~reset&shadow_rat      , eph1,  reset|(op_switch_next&~sm_idle));  
   
     
         logic statechange; 
@@ -199,11 +213,11 @@ Still need to:
         
        rmuxdx4_im #(384) permin1   (func_outputs, 
               
-							shadow_cyc                           ,state_cyclist,
+              shadow_cyc                           ,state_cyclist,
               shadow_abs | shadow_non              , absorb_out,   
               shadow_enc | shadow_dec              , cryptout,  //crypt input.                
               shadow_sqz | shadow_rat | shadow_sky , sqz_state
-							//                                       state_cyclist
+              //                                       state_cyclist
         ); 
         
         
@@ -218,7 +232,7 @@ Still need to:
       assign ex_sqzdone = {128{shadow_sqz}};   // nonce waas here?
       assign ex_decdone = {128{shadow_dec}};
       assign ex_skydone = {128{shadow_sky}};
-      assign ex_rat = {128{sm_rat}};
+      assign ex_rat = {128{shadow_rat}};
 
     assign textout[191:0] = {(saved_state[383:256] & (ex_encdone))^((ex_decdone|ex_sqzdone|ex_skydone)&permute_out[383:256]),
                              (saved_state[255:192]&(ex_encdone[63:0]|ex_decdone[63:0])^(ex_decdone[63:0]&permute_out[255:192]))}; //for which the first 128 bits is the squeeze data, and the entire vector is the cipher/plain text  
@@ -243,7 +257,7 @@ assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
         
         
         assign sqz_state[384:256] = {permute_out[383:377], permute_out[376]^(hash_more), permute_out[375:256]}&~ex_rat;
-        assign sqz_state[255:0]   = {permute_out[255:249], permute_out[248]^(~sm_sqz), permute_out[247:0]};         
+        assign sqz_state[255:0]   = {permute_out[255:249], permute_out[248]^(~shadow_sqz), permute_out[247:0]};         
                                                            //~permute_out[248]
             //----------------------------------------------------------------
             //Xoodyak Permute --- Instantiates the permute module 
@@ -252,7 +266,7 @@ assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
           permute #(PERM_INIT) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
-              .run           (~(op_switch_next|sm_idle | sm_cyc)),
+              .run           (~(sm_idle | sm_cyc)),
               .state_in      (permin_modified),
               .sbox_ctrl     (perm_ctr),
               .state_out     (permute_out)
@@ -269,6 +283,24 @@ assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
 
           // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
     
+      logic [215:0] ex_shadow_abs, ex_shadow_non;
+      assign ex_shadow_abs =  {216{shadow_abs}};
+      assign ex_shadow_non = {216{shadow_non}};
+    
+       //Calculates the output of the DOWN() absorb of both nonce and a 224 bit absorption with boolean algebra. 
+//additional logic is required for the final two bits for continuing absorptions.  Cd is zero for continuing absorbs.          
+       //So the fundamental problem is that the shadow state will change to the "current state" before it actually evaluates.  
+             
+                  
+        assign absorb_out[383:256] = permute_out[383:256]^(nonce_r&ex_shadow_non[215:88])^(absdata_r[351:224]&ex_shadow_abs[215:88]);
+        assign absorb_out[255:248] = {permute_out[255:249]^(absdata_r[223:217]&ex_shadow_abs[6:0]&~ex_hash[6:0]), (permute_out[248]^shadow_non)^((absdata_r[216]&ex_shadow_abs[0])|hash_mode)};
+        assign absorb_out[247:32]  = {permute_out[247:32]^(absdata_r[215:0]&ex_shadow_abs&~ex_hash)};
+        assign absorb_out[31:8]    = {permute_out[31:25], permute_out[24]^(shadow_abs&~hash_mode), permute_out[23:8]};
+        assign absorb_out[7:0]     = {permute_out[7:2], permute_out[1]^((shadow_abs&keyed_mode&~meta_abs)|(shadow_non&~meta_non)), permute_out[0]^((shadow_abs&keyed_mode&~meta_abs)|(shadow_non&~meta_non))}; //for nonce absorption.  
+    
+
+
+/*
       logic [215:0] ex_sm_abs, ex_sm_non;
       assign ex_sm_abs =  {216{sm_abs}};
       assign ex_sm_non = {216{sm_non}};
@@ -283,8 +315,24 @@ assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
         assign absorb_out[247:32]  = {permute_out[247:32]^(absdata_r[215:0]&ex_sm_abs&~ex_hash)};
         assign absorb_out[31:8]    = {permute_out[31:25], permute_out[24]^(sm_abs&~hash_mode), permute_out[23:8]};
         assign absorb_out[7:0]     = {permute_out[7:2], permute_out[1]^((sm_abs&keyed_mode&~shadow_abs)|(sm_non&~shadow_non)), permute_out[0]^((sm_abs&keyed_mode&~shadow_abs)|(sm_non&~shadow_non))}; //for nonce absorption.  
-                                                                     ///((sm_abs|sm_non)&keyed_mode)
-       
+
+
+*/
+
+    
+
+
+             ///((sm_abs|sm_non)&keyed_mode)
+/*        logic [383:0] absorb_xor, absorb_newout;
+       rmuxdx2_im #(384) comparestuff (absorb_xor,
+                      sm_non  ,{nonce_r, 7'h0, sm_non, 246'h0, (sm_non&~shadow_non), (sm_non&~shadow_non)},
+                      sm_abs  ,{absdata_r[351:224]&ex_sm_abs[215:88], absdata_r[223:217]&ex_sm_abs[6:0]&~ex_hash[6:0] ,((absdata_r[216]&ex_sm_abs[0])|hash_mode) ,(absdata_r[215:0]&ex_sm_abs&~ex_hash),8'h0, (sm_abs&~hash_mode), 22'h0, (sm_abs&keyed_mode&~shadow_abs), (sm_abs&keyed_mode&~shadow_abs)});
+                        
+       assign absorb_newout = permute_out^absorb_xor;
+        
+        logic abscpr;
+        assign abscpr = &(~(absorb_newout^absorb_out));
+        */
         
           //This performs the required manipulation on cipher output.  
           

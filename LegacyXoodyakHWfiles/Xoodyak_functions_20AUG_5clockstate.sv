@@ -36,7 +36,7 @@ Still need to:
           
           input logic [191:0]     textin,  //Either plain text or cipher text depending on opmode
           input logic [127:0]     nonce,
-          input logic [351:0]     assodata,
+          input logic [351:0]     absdata,
           input logic [127:0]     key,
           input logic [5:0]       opmode,  //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
@@ -152,14 +152,14 @@ Still need to:
   
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     key_r,nonce_r;
-          logic [351:0]     assodata_r;
+          logic [351:0]     absdata_r;
           logic [5:0]       opmode_r; 
 				
         
         //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
         rregs_en #(192,1) txtr  ( textin_r           , textin             , eph1, sm_idle);   
         rregs_en #(128,1) noncr ( nonce_r            , nonce              , eph1, sm_idle);
-        rregs_en #(352,1) assodr( assodata_r         , assodata           , eph1, sm_idle);
+        rregs_en #(352,1) assodr( absdata_r         , absdata           , eph1, sm_idle);
         rregs_en #(128,1) keyr  ( key_r              , key                , eph1, sm_idle);
 				rregs_en #(6,1)   opmd  (opmode_r 					 , opmode             , eph1, sm_idle);
 
@@ -231,7 +231,7 @@ Still need to:
 
 logic [383:0] abs_cyc_hash;
 
-assign abs_cyc_hash = {assodata_r[351:224], 8'h1,  248'h1};
+assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
 
 
 
@@ -275,12 +275,14 @@ assign abs_cyc_hash = {assodata_r[351:224], 8'h1,  248'h1};
        
              
                   
-        assign absorb_out[383:256] = permute_out[383:256]^(nonce_r&ex_sm_non[215:88])^(assodata_r[351:224]&ex_sm_asso[215:88]);
-        assign absorb_out[255:248] = {permute_out[255:249]^(assodata_r[223:217]&ex_sm_asso[6:0]&~ex_hash[6:0]), (permute_out[248]^sm_non)^((assodata_r[216]&ex_sm_asso[0])|hash_mode)};
-        assign absorb_out[247:32]  = {permute_out[247:32]^(assodata_r[215:0]&ex_sm_asso&~ex_hash)};
+        assign absorb_out[383:256] = permute_out[383:256]^(nonce_r&ex_sm_non[215:88])^(absdata_r[351:224]&ex_sm_asso[215:88]);
+        assign absorb_out[255:248] = {permute_out[255:249]^(absdata_r[223:217]&ex_sm_asso[6:0]&~ex_hash[6:0]), (permute_out[248]^sm_non)^((absdata_r[216]&ex_sm_asso[0])|hash_mode)};
+        assign absorb_out[247:32]  = {permute_out[247:32]^(absdata_r[215:0]&ex_sm_asso&~ex_hash)};
         assign absorb_out[31:8]    = {permute_out[31:25], permute_out[24]^(sm_asso&~hash_mode), permute_out[23:8]};
         assign absorb_out[7:0]     = {permute_out[7:2], permute_out[1]^((sm_asso&keyed_mode&~shadow_asso)|(sm_non&~shadow_non)), permute_out[0]^((sm_asso&keyed_mode&~shadow_asso)|(sm_non&~shadow_non))}; //for nonce absorption.  
                                                                      ///((sm_asso|sm_non)&keyed_mode)
+																																		 
+				 
        
         
           //This performs the required manipulation on cipher output.  
