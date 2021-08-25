@@ -47,10 +47,7 @@ Still need to:
           input logic             reset,
           input logic             start,
           
-          input logic [191:0]     textin,  //Either plain text or cipher text depending on opmode
-          input logic [127:0]     nonce,
-          input logic [351:0]     absdata,
-          input logic [127:0]     key,
+          input logic [351:0]     input_data, 
           input logic [5:0]       opmode,    
 
           output logic [191:0]    textout,
@@ -95,7 +92,7 @@ Still need to:
        assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
        assign sm_cyc_next       = (sm_idle & (opmode_r[3:0] == 4'b0001)) ;        
        assign sm_non_next       = (sm_idle & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next); 
-       assign sm_abs_next      = (sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs  &  ~op_switch_next); // Not Keymode only
+       assign sm_abs_next       = (sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs  &  ~op_switch_next); // Not Keymode only
        assign sm_enc_next       = (sm_idle & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next);
        assign sm_dec_next       = (sm_idle & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next); 
        assign sm_sqz_next       = (sm_idle & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next);   //Not keyed mode only.
@@ -120,7 +117,10 @@ Still need to:
         rregs #(1) smsk (sm_sky,    ~reset & sm_sky_next,    eph1);       
        
         //The shadow state is active for certain states if they were the most recent function called before the previous one.
-        //This is important for calculating CD values in certain areas.  
+        //This is important for selecting the input to the next permute.  
+				//A shadow state begins on the first idle clock, which is the previous state, and persists until the next function call.
+				//When the same function is called multiple times in a row, the shadow state doesn't change.
+				
         logic shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky ;  
 
           rregs_en #(1,1) shdwcyc (shadow_cyc , ~reset&sm_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
@@ -132,7 +132,11 @@ Still need to:
           rregs_en #(1,1) shdwsky (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
           rregs_en #(1,1) shdwrat (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
           
-          
+         
+
+          	
+					//The meta state is the function that was selected two function calls ago. That is to say, the function
+          //before the one that just completed.  	This is important for calculating CD values in certain areas.				
           logic meta_cyc, meta_non, meta_abs, meta_enc, meta_dec, meta_sqz, meta_rat, meta_sky ;  
 
           rregs_en #(1,1) metacyc (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
@@ -175,21 +179,22 @@ Still need to:
   
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     key_r,nonce_r;
-          logic [351:0]     absdata_r;
+          logic [351:0]     absdata_r, input_data_r;
           logic [5:0]       opmode_r; 
         
-        
-        //Allows inputs to be absorbed only when the start flag is up, and no encryption is active.  
-        rregs_en #(192,1) txtr  ( textin_r           , textin             , eph1, sm_idle);   
-        rregs_en #(128,1) noncr ( nonce_r            , nonce              , eph1, sm_idle);
-        rregs_en #(352,1) absdr( absdata_r         , absdata           , eph1, sm_idle);
-        rregs_en #(128,1) keyr  ( key_r              , key                , eph1, sm_idle);
-        rregs_en #(6,1)   opmd  (opmode_r            , opmode             , eph1, sm_idle);
+
+          rregs_en #(352,1) txtr  ( input_data_r           , input_data             , eph1, sm_idle);   
+          assign textin_r = input_data_r[351:160];
+          assign nonce_r  = input_data_r[351:222];           
+          assign key_r    = input_data_r[351:222];
+					assign absdata_r = input_data_r; 
+          rregs_en #(6,1)   opmd  (opmode_r                , opmode             , eph1, sm_idle);
+
 
 
         logic [383:0] state_cyclist;
         logic [215:0] ex_hash;
-        assign ex_hash = {215{hash_mode}};
+        assign ex_hash = {216{hash_mode}};
         
         assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
         //assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
@@ -201,7 +206,7 @@ Still need to:
             //Permute Inputs --- gimmick
             //----------------------------------------------------------------        
             
-        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, intermux1, intermux2, permin_modified, saved_state, sqz_state, rat_state;
+        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, permin_modified, saved_state, sqz_state, rat_state;
         logic perm_done, start_flags;             
              logic [383:0] cryptout, decout;   
 
@@ -228,14 +233,16 @@ Still need to:
         //The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
       logic [191:0] ex_encdone, ex_sqzdone, ex_decdone, ex_skydone, ex_rat;
 
-      assign ex_encdone =  {128{shadow_enc}};  //abs was here?
+
+      assign ex_encdone = {128{shadow_enc}};  //abs was here?
       assign ex_sqzdone = {128{shadow_sqz}};   // nonce waas here?
       assign ex_decdone = {128{shadow_dec}};
       assign ex_skydone = {128{shadow_sky}};
-      assign ex_rat = {128{shadow_rat}};
+      assign ex_rat     = {128{shadow_rat}};
+      
 
-    assign textout[191:0] = {(saved_state[383:256] & (ex_encdone))^((ex_decdone|ex_sqzdone|ex_skydone)&permute_out[383:256]),
-                             (saved_state[255:192]&(ex_encdone[63:0]|ex_decdone[63:0])^(ex_decdone[63:0]&permute_out[255:192]))}; //for which the first 128 bits is the squeeze data, and the entire vector is the cipher/plain text  
+    assign textout[191:0] = sm_idle ? {(saved_state[383:256] & (ex_encdone))^((ex_decdone|ex_sqzdone|ex_skydone)&permute_out[383:256]),
+                             (saved_state[255:192]&(ex_encdone[63:0]|ex_decdone[63:0])^(ex_decdone[63:0]&permute_out[255:192]))} : '0; //for which the first 128 bits is the squeeze data, and the entire vector is the cipher/plain text  
 
         
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
@@ -251,12 +258,20 @@ logic [383:0] abs_cyc_hash;
 assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
 
 
-  
+/*   logic [383:0] sqz_state_exception; 
+rregs_en #(384,1) expt (sqz_state_exception, saved_state, eph1, shadow_sqz&sm_sqz); 
 
-        assign permin_modified =  sm_abs&hash_mode&~shadow_abs&shadow_cyc? abs_cyc_hash : {saved_state[383:8], saved_state[7:0]^cd};             
+       // assign permin_modified =  sm_abs&hash_mode&~shadow_abs&shadow_cyc? abs_cyc_hash : {saved_state[383:8], saved_state[7:0]^cd};   
         
+        rmuxd3_im #(384) mdfdx (permin_modified,
+                     sm_abs&hash_mode&~shadow_abs&shadow_cyc, abs_cyc_hash,
+                     ~sm_sqz&shadow_sqz, sqz_state_exception,  
+                     {saved_state[383:377], saved_state[376], saved_state[375:8], saved_state[7:0]^cd});
         
-        assign sqz_state[384:256] = {permute_out[383:377], permute_out[376]^(hash_more), permute_out[375:256]}&~ex_rat;
+         */
+        assign permin_modified =  sm_abs&hash_mode&~shadow_abs&shadow_cyc? abs_cyc_hash : {saved_state[383:8], saved_state[7:0]^cd};                                                                                                     
+        
+        assign sqz_state[384:256] = {permute_out[383:377], permute_out[376]^(hash_more), permute_out[375:256]}&~ex_rat; //Instability in hash_more 
         assign sqz_state[255:0]   = {permute_out[255:249], permute_out[248]^(~shadow_sqz), permute_out[247:0]};         
                                                            //~permute_out[248]
             //----------------------------------------------------------------
@@ -298,43 +313,15 @@ assign abs_cyc_hash = {absdata_r[351:224], 8'h1,  248'h1};
         assign absorb_out[31:8]    = {permute_out[31:25], permute_out[24]^(shadow_abs&~hash_mode), permute_out[23:8]};
         assign absorb_out[7:0]     = {permute_out[7:2], permute_out[1]^((shadow_abs&keyed_mode&~meta_abs)|(shadow_non&~meta_non)), permute_out[0]^((shadow_abs&keyed_mode&~meta_abs)|(shadow_non&~meta_non))}; //for nonce absorption.  
     
+				logic [383:0] down_modifier, absorb_out2;
+				rmuxd4_im #(384) absot (down_modifier,
+				shadow_non ,   {nonce_r, 8'h1,  216'h0, 24'h0, ~meta_non, ~meta_non},
+				shadow_abs&keyed_mode,   {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~meta_abs, ~meta_abs}, 
+        shadow_abs&hash_mode,    {absdata_r[351:224], 8'h1, 344'h0},
+				'0}; 
+        assign absorb_out2 = down_modifier^permute_out;
 
-
-/*
-      logic [215:0] ex_sm_abs, ex_sm_non;
-      assign ex_sm_abs =  {216{sm_abs}};
-      assign ex_sm_non = {216{sm_non}};
-    
-       //Calculates the output of the DOWN() absorb of both nonce and a 224 bit absorption with boolean algebra. 
-//additional logic is required for the final two bits for continuing absorptions.  Cd is zero for continuing absorbs.          
-       
-             
-                  
-        assign absorb_out[383:256] = permute_out[383:256]^(nonce_r&ex_sm_non[215:88])^(absdata_r[351:224]&ex_sm_abs[215:88]);
-        assign absorb_out[255:248] = {permute_out[255:249]^(absdata_r[223:217]&ex_sm_abs[6:0]&~ex_hash[6:0]), (permute_out[248]^sm_non)^((absdata_r[216]&ex_sm_abs[0])|hash_mode)};
-        assign absorb_out[247:32]  = {permute_out[247:32]^(absdata_r[215:0]&ex_sm_abs&~ex_hash)};
-        assign absorb_out[31:8]    = {permute_out[31:25], permute_out[24]^(sm_abs&~hash_mode), permute_out[23:8]};
-        assign absorb_out[7:0]     = {permute_out[7:2], permute_out[1]^((sm_abs&keyed_mode&~shadow_abs)|(sm_non&~shadow_non)), permute_out[0]^((sm_abs&keyed_mode&~shadow_abs)|(sm_non&~shadow_non))}; //for nonce absorption.  
-
-
-*/
-
-    
-
-
-             ///((sm_abs|sm_non)&keyed_mode)
-/*        logic [383:0] absorb_xor, absorb_newout;
-       rmuxdx2_im #(384) comparestuff (absorb_xor,
-                      sm_non  ,{nonce_r, 7'h0, sm_non, 246'h0, (sm_non&~shadow_non), (sm_non&~shadow_non)},
-                      sm_abs  ,{absdata_r[351:224]&ex_sm_abs[215:88], absdata_r[223:217]&ex_sm_abs[6:0]&~ex_hash[6:0] ,((absdata_r[216]&ex_sm_abs[0])|hash_mode) ,(absdata_r[215:0]&ex_sm_abs&~ex_hash),8'h0, (sm_abs&~hash_mode), 22'h0, (sm_abs&keyed_mode&~shadow_abs), (sm_abs&keyed_mode&~shadow_abs)});
-                        
-       assign absorb_newout = permute_out^absorb_xor;
-        
-        logic abscpr;
-        assign abscpr = &(~(absorb_newout^absorb_out));
-        */
-        
-          //This performs the required manipulation on cipher output.  
+ 
           
           logic[191:0] ex_sm_dec;
           assign ex_sm_dec = {192{sm_dec}};
