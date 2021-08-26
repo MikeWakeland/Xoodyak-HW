@@ -245,9 +245,9 @@ Still need to:
 
     
     rmuxd4_im #(192) txtut (  textout ,
-						sm_idle&shadow_enc, 			saved_state[383:192],
-						sm_idle&shadow_dec,  			textin_r^permute_out[383:192],
-						sm_idle&shadow_sqz, 			{permute_out[383:256],{64{1'b0}}},
+            sm_idle&shadow_enc,       saved_state[383:192],
+            sm_idle&shadow_dec,        textin_r^permute_out[383:192],
+            sm_idle&shadow_sqz,       {permute_out[383:256],{64{1'b0}}},
             '0);                              
     
     
