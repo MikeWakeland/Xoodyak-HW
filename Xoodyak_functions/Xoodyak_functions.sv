@@ -23,6 +23,7 @@ Still need to:
 3. Remove X possiblities from muxes and registers.  
 4. See if I can consolidate user's opcode vector. 
 5. Check if I can successfully call functions after squeeze/the function is still in an up() state.  
+6. Check for instability that changing user inputs can cause.  Certain "hash more" functionalities come to mind. 
 
 
 
@@ -87,9 +88,9 @@ Still need to:
        assign sm_rat_next       = (sm_idle & (opmode[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next); 
        assign sm_sky_next       = (sm_idle & (opmode[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next); 
                                   //I removed the _r component from opmode for timing purposes.  I also think this is valid since the user should be able to change
-																	//at any point prior to the clock cycle.  GH please advise.  
-																	
-																	
+                                  //at any point prior to the clock cycle.  GH please advise.  
+                                  
+                                  
        assign sqz_more =    (opmode_r[4:0]==5'b10110);  //Hash_more says that the user wants at least 128' more data than the existing hash.  
        assign hash_mode =   opmode_r[5];
        assign keyed_mode = ~opmode_r[5];
@@ -155,7 +156,7 @@ Still need to:
 
           assign perm_ctr_next = perm_ctr - 1; 
                     
-          rregs #(3) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1);  
+          rregs_en #(3,1) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
 
 
             //----------------------------------------------------------------
@@ -177,7 +178,7 @@ Still need to:
           rregs_en #(352,1) txtr1  ( input_data_ri           , input_data             , eph1, sm_idle);   
           rregs #(352) txtr2  ( input_data_r           , input_data_ri             , eph1);         
 
-   				 assign textin_r = input_data_r[351:160];
+            assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
           assign key_r    = input_data_r[351:224];
           assign absdata_r = input_data_r; 
@@ -196,7 +197,7 @@ Still need to:
         
             
             //----------------------------------------------------------------
-            //Permute Inputs --- gimmick
+            //Permute Inputs 
             //----------------------------------------------------------------        
             
         logic [383:0] permute_in, permute_out, absorb_out , nonce_out, func_outputs, permin_cd_added, saved_state, sqz_down, rat_state;
@@ -242,14 +243,14 @@ Still need to:
       assign ex_rat     = {128{shadow_rat}};
       
 
-		
-		rmuxd4_im #(192) txtut (  textout ,
-                             	sm_idle&shadow_enc, saved_state[383:192],
-                              sm_idle&shadow_dec,  textin_r^permute_out[383:192],
-                              sm_idle&shadow_sqz, {permute_out[383:256],{64{1'b0}}},
-															'0);															
-		
-		
+    
+    rmuxd4_im #(192) txtut (  textout ,
+						sm_idle&shadow_enc, 			saved_state[383:192],
+						sm_idle&shadow_dec,  			textin_r^permute_out[383:192],
+						sm_idle&shadow_sqz, 			{permute_out[383:256],{64{1'b0}}},
+            '0);                              
+    
+    
 
         
          ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
@@ -261,7 +262,7 @@ Still need to:
         assign permin_cd_added =  {saved_state[383:8], saved_state[7:0]^cd};    
 
         logic permute_running_wire;
-         assign permute_running_wire =			~(sm_idle|one_clock_functions);	
+         assign permute_running_wire =      ~(sm_idle|one_clock_functions);  
         
             //----------------------------------------------------------------
             //Xoodyak Permute --- Instantiates the permute module 
