@@ -1,15 +1,22 @@
 /*Weird comments:
+
 1.  Calls to the squeeze function set the state "up" but never "down." Does this cause a deadlock, algorithmically speaking?
 2.  The user isn't prevented from making illogical function calls (keyed calls in hash mode etc)
 3.  Can now support any length hashes in hash mode but the user is required to tell me via opmode if there is more hash required afterwards.  
 4.  Changing the mux output to be default cyclist output means that the user can screw himself by not assertingproper opcodes at all times. 
     whereas before 
+
 Tested functions:
 All functions are operational. 
+
+
+
 Test vectors run:
 Hash initialize -> absorb -> absorb -> squeeze -> squeeze
 Keyed initialize -> nonce -> absorb -> absorb -> crypt -> crypt -> squeeze(keyed mode) 
 keyed initialize -> nonce -> absorb -> absorb -> squeezekey()
+
+
 Still need to:
 1. Run more test vectors, revalidate hash functions.
 2. Inspect timing related issues.
@@ -17,6 +24,9 @@ Still need to:
 4. See if I can consolidate user's opcode vector. 
 5. Check if I can successfully call functions after squeeze/the function is still in an up() state.  
 6. Check for instability that changing user inputs can cause.  Certain "hash more" functionalities come to mind. 
+
+
+
 */      
 
 
@@ -45,6 +55,7 @@ Still need to:
      
            
            Xoodyak requires:
+
             
             Xoodyak produces:
                  
@@ -58,20 +69,19 @@ Still need to:
                                  sm_rat, sm_rat_next, sm_sky, sm_sky_next, sm_hsq, sm_hsq_next, hash_mode, keyed_mode, sqz_more, initial_state, one_clock_functions; 
         logic   [127:0]          plain_text_r, round_recycle;
         logic   [3:0]            cycle_ctr_pr, cycle_ctr;
-        parameter logic GATE = 1; 
-				
         
-        assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
+        
+        assign run =  sm_cyc | sm_non | sm_abs | sm_enc  | sm_dec | sm_sqz | sm_sky | sm_rat;
         assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
         assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky);
-        assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) | (~sm_sky&shadow_sky);
+        assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc);
         
         //FSM
 
        assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
        assign sm_cyc_next       = (sm_idle & (opmode_r[3:0] == 4'b0001)) ;        
        assign sm_non_next       = (sm_idle & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next); 
-       assign sm_abs_next       = (sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next); // Not Keymode only
+       assign sm_abs_next       = (sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs  &  ~op_switch_next); // Not Keymode only
        assign sm_enc_next       = (sm_idle & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next);
        assign sm_dec_next       = (sm_idle & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next); 
        assign sm_sqz_next       = (sm_idle & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next);   //Not keyed mode only.
@@ -79,7 +89,7 @@ Still need to:
        assign sm_sky_next       = (sm_idle & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next); 
                                   //I removed the _r component from opmode for timing purposes.  I also think this is valid since the user should be able to change
                                   //at any point prior to the clock cycle.  GH please advise.  
-                                  
+       assign sm_run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_rat_next |sm_sky_next;                                 
                                   
        assign sqz_more =    (opmode_r[4:0]==5'b10110);  //Hash_more says that the user wants at least 128' more data than the existing hash.  
        assign hash_mode =   opmode_r[5];
@@ -96,7 +106,8 @@ Still need to:
         rregs #(1) smde (sm_dec,    ~reset & sm_dec_next,    eph1);        
         rregs #(1) smsq (sm_sqz,    ~reset & sm_sqz_next,    eph1);
         rregs #(1) smra (sm_rat,    ~reset & sm_rat_next,    eph1);
-        rregs #(1) smsk (sm_sky,    ~reset & sm_sky_next,    eph1);       
+        rregs #(1) smsk (sm_sky,    ~reset & sm_sky_next,    eph1);  
+				
        
         //The shadow state is active for certain states if they were the most recent function called before the previous one.
         //This is important for selecting the input to the next permute.  
@@ -105,14 +116,14 @@ Still need to:
         
         logic shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky ;  
 
-          rregs_en #(1,GATE) shdwcyc (shadow_cyc , ~reset&sm_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
-          rregs_en #(1,GATE) shdwnon (shadow_non , ~reset&sm_non      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) shdwabs (shadow_abs , ~reset&sm_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) shdwenc (shadow_enc , ~reset&sm_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) shdwdec (shadow_dec , ~reset&sm_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
-          rregs_en #(1,GATE) shdwsqz (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) shdwsky (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) shdwrat (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
+          rregs_en #(1,1) shdwcyc (shadow_cyc , ~reset&sm_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
+          rregs_en #(1,1) shdwnon (shadow_non , ~reset&sm_non      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) shdwabs (shadow_abs , ~reset&sm_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) shdwenc (shadow_enc , ~reset&sm_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) shdwdec (shadow_dec , ~reset&sm_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
+          rregs_en #(1,1) shdwsqz (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) shdwsky (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) shdwrat (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
           
          
 
@@ -121,32 +132,32 @@ Still need to:
           //before the one that just completed.    This is important for calculating CD values in certain areas.        
           logic meta_cyc, meta_non, meta_abs, meta_enc, meta_dec, meta_sqz, meta_rat, meta_sky ;  
 
-          rregs_en #(1,GATE) metacyc (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
-          rregs_en #(1,GATE) metanon (meta_non , ~reset&shadow_non      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) metaabs (meta_abs , ~reset&shadow_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) metaenc (meta_enc , ~reset&shadow_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) metadec (meta_dec , ~reset&shadow_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
-          rregs_en #(1,GATE) metasqz (meta_sqz , ~reset&shadow_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) metasky (meta_sky , ~reset&shadow_sky      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) metarat (meta_rat , ~reset&shadow_rat      , eph1,  reset|(op_switch_next&~sm_idle));  
+          rregs_en #(1,1) metacyc (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
+          rregs_en #(1,1) metanon (meta_non , ~reset&shadow_non      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) metaabs (meta_abs , ~reset&shadow_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) metaenc (meta_enc , ~reset&shadow_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,1) metadec (meta_dec , ~reset&shadow_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
+          rregs_en #(1,1) metasqz (meta_sqz , ~reset&shadow_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) metasky (meta_sky , ~reset&shadow_sky      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,1) metarat (meta_rat , ~reset&shadow_rat      , eph1,  reset|(op_switch_next&~sm_idle));  
   
     
         logic statechange; 
-        assign statechange = sm_idle&(sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_sky_next | sm_rat_next); //sets the perm counter to three whenever there's a state change on the next clock. 
+        assign statechange = sm_idle&(sm_non_next | sm_abs_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_sky_next | sm_rat_next); //sets the perm counter to three whenever there's a state change on the next clock. 
         
    
             //----------------------------------------------------------------
             //State Counters.  Counts how many clocks remain before a state change. 
             //----------------------------------------------------------------   
           
-          logic [2:0] perm_ctr,  perm_ctr_next;      
+          logic [1:0] perm_ctr,  perm_ctr_next;      
 
-          parameter logic [2:0] PERM_INIT = 3'h3;   
-          assign op_switch_next = (perm_ctr == 3'h0);
+          parameter logic [2:0] PERM_INIT = 2'h3;   
+          assign op_switch_next = (perm_ctr == 2'h0);
 
           assign perm_ctr_next = perm_ctr - 1; 
                     
-          rregs_en #(3,GATE) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
+          rregs_en #(2,1) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, (run_next&~one_clock_functions)|reset);  
 
 
             //----------------------------------------------------------------
@@ -165,15 +176,14 @@ Still need to:
           logic [5:0]       opmode_r; 
         
 
-          rregs_en #(352,GATE) txtr1  ( input_data_ri           , input_data             , eph1, sm_idle);   
+          rregs_en #(352,1) txtr1  ( input_data_ri           , input_data             , eph1, run_next);   
           rregs #(352) txtr2  ( input_data_r           , input_data_ri             , eph1);         
-					rregs_en #(352) trial (input_data_trial , input_data, eph1, statechange);
-
-          assign textin_r = input_data_r[351:160];
+         rregs_en #(352,1) trial  ( input_data_trial           , input_data             , eph1, (run));//&(one_clock_functions|(perm_ctr==2'h3))));  //sm_run_next instead.   
+            assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
           assign key_r    = input_data_r[351:224];
           assign absdata_r = input_data_r; 
-          rregs #(6)   opmd  (opmode_r                , opmode             , eph1);
+          rregs_en #(6,1)   opmd  (opmode_r                , opmode             , eph1, sm_idle);
 
 
 
@@ -212,17 +222,12 @@ Still need to:
         
         
         logic [383:0] saved_squeeze;
-        rregs_en #(384,GATE) sqzrecovery (saved_squeeze, saved_state, eph1, sm_idle&(sm_sqz_next|sm_sky_next)); 
-         
-				logic hash_abs_exception, sqz_exception;
-				
-				assign hash_abs_exception =  sm_abs&hash_mode&~shadow_abs&shadow_cyc;
-				assign sqz_exception = (shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky);    
-				
+        rregs_en #(384,1) sqzrecovery (saved_squeeze, saved_state, eph1, sm_idle); 
+        
         rmuxd4_im #(384) exceptionhandler (saved_state, 
           initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
-          hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
-          sqz_exception                            , saved_squeeze,   //requires the previous state value since the last permute does not affect the state.  
+          sm_abs&hash_mode&~shadow_abs&shadow_cyc ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
+          shadow_sqz&~sm_sqz                      , saved_squeeze,   //requires the previous state value since the last permute does not affect the state.  
           func_outputs
         );
         
@@ -241,9 +246,9 @@ Still need to:
 
     
     rmuxd4_im #(192) txtut (  textout ,
-            sm_idle&shadow_enc,       saved_state[383:192],
-            sm_idle&shadow_dec,        textin_r^permute_out[383:192],
-            sm_idle&shadow_sqz,       {permute_out[383:256],{64{1'b0}}},
+						sm_idle&shadow_enc, 			saved_state[383:192],
+						sm_idle&shadow_dec,  			textin_r^permute_out[383:192],
+						sm_idle&shadow_sqz, 			{permute_out[383:256],{64{1'b0}}},
             '0);                              
     
     
@@ -264,7 +269,7 @@ Still need to:
             //Xoodyak Permute --- Instantiates the permute module 
             //----------------------------------------------------------------                
           
-          permute #(PERM_INIT, GATE) xoopermute(
+          permute #(PERM_INIT) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
               .run           (~(sm_idle|one_clock_functions)),
@@ -327,14 +332,14 @@ Still need to:
  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
  
      
-      module permute #(parameter PERM_INIT=3, parameter GATE = 1)( 
+      module permute #(parameter PERM_INIT=3)( 
       
           input logic          eph1,
           input logic          reset, 
            
           input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
-          input logic  [2:0]   sbox_ctrl, 
+          input logic  [1:0]   sbox_ctrl, 
           
           output logic [383:0] state_out
 
@@ -348,6 +353,7 @@ Still need to:
            
            Variables are appended with _X to refer to their round of use.  Index begins at zero.  For example,
            theta_out_4 refers to the output of the fifth round's θ function.  
+
            Round zero defines terms with reference to the original Xoodoo documentation on Algorithm 1,
            Page 6 of "Xoodyak, A Lightweight Encryption Scheme."  
            
@@ -356,6 +362,7 @@ Still need to:
            [y][x][z], or [plane][lane][depth].  
            
            All shifts are barrel shifts; zeros are never concatenated as shift in bits.  
+
            ***WARNING! Table 2 of the the specification requires that the round constant's least significant bit is at z = 0,
            but software test benching has reversed what order these values are applied.  For consistency purposes I have 
            kept them reversed to match the software, but this is not algorithmically correct per the specification.
@@ -425,7 +432,7 @@ Still need to:
 
       );
       
-      rregs_en #(384,GATE) permstate (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
+      rregs_en #(384,1) permstate (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
     
 
       assign state_out = {      state_recycle[103:96] ,state_recycle[111:104],state_recycle[119:112],state_recycle[127:120],
@@ -736,3 +743,7 @@ assign rho_west_2[0][0] = theta_out_2[0][0];
         assign state_out = rho_east_2;
 
       endmodule: permute_rnd
+
+
+ 
+     

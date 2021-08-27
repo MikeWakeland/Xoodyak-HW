@@ -1,4 +1,4 @@
-		`include "muxreglib.sv"
+`include "muxreglib.sv"
 		
 		`define SIM  //tick commands are commands to the tools.  Tells the tools that it should go to these files and grab whats in there.  
 
@@ -110,7 +110,6 @@ assign ciphertext	= (opmode_ctr > 21)? 192'h87a06d5561b0d87c20a12db5d34783258ff7
 Hash initialize -> absorb -> absorb -> squeeze -> squeeze
 Keyed initialize -> nonce -> absorb -> absorb -> crypt -> crypt -> squeeze(keyed mode) 
 keyed initialize -> nonce -> absorb -> absorb -> squeezekey() 
-
 	assign opmode_t = {6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
 										 6'h1, 6'h1, 6'h1, 6'h1, 6'h1, 6'h1,
 										 6'h2, 6'h2, 6'h2, 6'h2, 6'h2, 6'h2,
@@ -119,9 +118,6 @@ keyed initialize -> nonce -> absorb -> absorb -> squeezekey()
 										 6'h5, 6'h5, 6'h5, 6'h5, 6'h5, 6'h5, 
 										 6'h6, 6'h6, 6'h6, 6'h6, 6'h6, 6'h6,
 										 6'h7, 6'h7, 6'h7, 6'h7, 6'h7, 6'h7};
-
-
-
 */										 
 										 
 										 
@@ -172,4 +168,3 @@ assign opmode_wire=opmode_t[opmode_ctr];
 
 
 		endmodule: tb_top
- 
