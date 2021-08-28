@@ -118,10 +118,10 @@ keyed initialize -> nonce -> absorb -> absorb -> squeezekey()
 	logic [191:0] plaintext_wire;
 assign plaintext_wire = plaintext_t[opmode_ctr];	
 										 
-	logic [4:0] opmode_ctr, opmode_ctr_next;
-initial opmode_ctr = 5'h2e;
+	logic [5:0] opmode_ctr, opmode_ctr_next;
+initial opmode_ctr = 6'h2e;
 assign opmode_ctr_next = opmode_ctr - 1;
-rregs #(5) opctr (opmode_ctr, reset | (opmode_ctr == 0) ? 5'h2e : opmode_ctr_next, eph1);	
+rregs #(6) opctr (opmode_ctr, reset | (opmode_ctr == 0) ? 6'h2e : opmode_ctr_next, eph1);	
 logic [4:0] opmode_wire;
 assign opmode_wire=opmode_t[opmode_ctr];
 	

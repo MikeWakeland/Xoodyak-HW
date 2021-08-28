@@ -60,9 +60,9 @@ Impact: cant easily call functions after a squeeze.
         logic                    sm_idle,  sm_cyc, sm_run, sm_idle_next, sm_run_next, sm_cyc_next,  sm_non_next, op_switch_next,
                                  sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
                                  sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, sqz_more, initial_state, one_clock_functions; 
-				logic [4:0]       				opmode_r; 
+        logic [4:0]               opmode_r; 
         parameter logic GATE = 1; 
-				
+        
         
         assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
         assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
@@ -161,7 +161,7 @@ Impact: cant easily call functions after a squeeze.
 
           rregs_en #(352,GATE) txtr1  ( input_data_ri           , input_data             , eph1, sm_idle);   
           rregs #(352) txtr2  ( input_data_r           , input_data_ri             , eph1);  //Remember this statement is kind of fake
-					rregs_en #(352) trial (input_data_trial , input_data, eph1, statechange);
+          rregs_en #(352) trial (input_data_trial , input_data, eph1, statechange);
                                                                   //&(perm_ctr==2'h3) | one_clock_functions)
           assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
@@ -169,13 +169,13 @@ Impact: cant easily call functions after a squeeze.
           assign absdata_r = input_data_r; 
           rregs #(5)   opmd  (opmode_r                , opmode             , eph1);
 
-					logic [383:0] state_cyclist;
-					logic [127:0] ex_hash;
-					assign ex_hash = {127{hash_mode}};
-					
-					assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
-					//assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
-					// So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
+          logic [383:0] state_cyclist;
+          logic [127:0] ex_hash;
+          assign ex_hash = {127{hash_mode}};
+          
+          assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
+          //assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
+          // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
  
         
             
@@ -203,14 +203,14 @@ Impact: cant easily call functions after a squeeze.
         ); 
         
         
-				//Created as a means to catch the state for use after a squeeze function.  
+        //Created as a means to catch the state for use after a squeeze function.  
         logic [383:0] saved_squeeze;
         rregs_en #(384,GATE) hack (saved_squeeze, saved_state, eph1, reset|sm_idle&(sm_sqz_next|sm_sky_next)); 
          
-				logic hash_abs_exception, sqz_exception;
-				
-				assign hash_abs_exception =  sm_abs&hash_mode&shadow_abs&meta_cyc;
-				assign sqz_exception = (shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky);
+        logic hash_abs_exception, sqz_exception;
+        
+        assign hash_abs_exception =  sm_abs&hash_mode&shadow_abs&meta_cyc;
+        assign sqz_exception = (shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky);
         rmuxd4_im #(384) exceptionhandler (saved_state, 
           initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
           hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
@@ -220,12 +220,12 @@ Impact: cant easily call functions after a squeeze.
         
 
           //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
-				rmuxd4_im #(192) txtut (  textout ,
-            sm_idle&shadow_enc											,saved_state[383:192],
-            sm_idle&shadow_dec											,textin_r^permute_out[383:192],
-            sm_idle&shadow_sqz											,{permute_out[383:256],{64{1'b0}}},
+        rmuxd4_im #(192) txtut (  textout ,
+            sm_idle&shadow_enc                      ,saved_state[383:192],
+            sm_idle&shadow_dec                      ,textin_r^permute_out[383:192],
+            sm_idle&(shadow_sqz|shadow_sky)          ,{permute_out[383:256],{64{1'b0}}},
             '0
-				);                              
+        );                              
     
     
 
@@ -254,8 +254,8 @@ Impact: cant easily call functions after a squeeze.
               .state_out     (permute_out)
           );    
               
-						
-							
+            
+              
             //----------------------------------------------------------------
             //Permute post processing --- Modifies the permute output for recyclying through the down() function and associated logic.             
             //----------------------------------------------------------------          
@@ -269,8 +269,8 @@ Impact: cant easily call functions after a squeeze.
     
   
         logic [383:0] abs_down_modifier, absorb_out2, abs_keyed, abs_hash, abs_non, down_input;
-				logic [191:0] ex_rat;
-				logic[191:0] ex_shdw_dec;
+        logic [191:0] ex_rat;
+        logic[191:0] ex_shdw_dec;
         assign ex_shdw_dec = {192{shadow_dec}};
 
         //Calculates the absorb input, this is the part that is XOR'd with the state during an absorb.  
@@ -286,8 +286,8 @@ Impact: cant easily call functions after a squeeze.
                       shadow_abs&hash_mode       ,abs_hash,
                       384'h0
         ); 
-				 //For certain functions the saved state is XOR'd instead of the permute from the previous round.
-				 //This is required when an up() function is not performed on the state, such as after a sqz or sky
+         //For certain functions the saved state is XOR'd instead of the permute from the previous round.
+         //This is required when an up() function is not performed on the state, such as after a sqz or sky
          //meta_sqz&~shadow_sqz  - saved state enters a race condition.  Necessary for post sqz processing. 
          assign down_input =  (sm_cyc | ((~sm_sqz&meta_sqz)|(~sm_sky&meta_sky))) ? saved_state : permute_out;
          
@@ -297,8 +297,8 @@ Impact: cant easily call functions after a squeeze.
           //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
           assign absorb_out = abs_down_modifier^down_input;
           assign crypt_down = { textin_r^(down_input[383:192]&~ex_shdw_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
-					assign sqz_down[384:256] = {down_input[383:377], down_input[376]^(shadow_sqz), down_input[375:256]}&~ex_rat;
-					assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~shadow_sqz), down_input[247:0]};   
+          assign sqz_down[384:256] = {down_input[383:377], down_input[376]^(shadow_sqz), down_input[375:256]}&~ex_rat;
+          assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~shadow_sqz), down_input[247:0]};   
                                                                                             
 
                                                                   
