@@ -199,3 +199,59 @@ bd19bdba3bd3a0d81bdbcbb2cdd5a0ba62e0e1eeb040abd5db8f04450901bd30793e2e875b6650ca
 The state after squeeze is: 
 bd19bdba3bd3a0d81bdbcbb2cdd5a0ba62e0e1eeb040abd5db8f04450901bd30793e2e875b6650cae4a7b9a5dc226974
 0750f109b97fcfad998fa34bc8342c13bd19bdba3bd3a0d81bdbcbb2cdd5a0ba
+
+
+xoocycle_cyclist(&cyc, (CU8P)"", 0, xoocycle_empty, 0,
+                  xoocycle_empty, 0); //Remember to change the keysize up in the cyclist function (KEY)
+
+
+  xoocycle_absorb(&cyc, (CU8P)"abcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnop",48); //(ASSOCIATED DATA) //abcdefghijklmnopabcdefghijklmnopabcdefghijkl
+  printf("state after absorbing AD is \n"); //NEWLINE
+  print8(&cyc, 48); //NEWLINE
+
+
+
+
+  xoocycle_squeeze(&cyc, tag2, 32);
+  print8(&tag2, 32);
+	
+	
+	
+	
+	
+	
+	
+	
+	-----------------------------------------------------------------------
+	
+	cyclist -> absorb -> absorb -> sky. 
+The key in hex is:
+38393a3b3c3d3e3f3031323334353637
+state before absorption in cyclist is 
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+state after absorption in cyclist is 
+38393a3b3c3d3e3f30313233343536370001000000000000000000000000000000000000000000000000000000000002
+the absorb input in hex is: 
+6162636465666768696a6b6c6d6e6f706162636465666768696a6b6c6d6e6f706162636465666768696a6b6c
+state input to perm is 
+38393a3b3c3d3e3f30313233343536370001000000000000000000000000000000000000000000000000000000000002
+state out from perm is 
+6da9009658a57623a2e65dda5181f626225b9cc9c969dc471d7582c9b4d7b15567f2db147da3d4dd28aaf20e92e436ab
+state input to perm is 
+0ccb63f23dc3114bcb8c36b63cef99564339ffadac0fbb2f741fe9a5d9b9de250690b87018c5b3b541c0996293e436a8
+
+state out from perm is 
+7a21c4a90ac48575c52ce38db5c94f1c6358a6ea3f90f52d5959ec8297be07ccfef28d5561726217443073aa8b307c4c
+state after absorbing AD is 
+1b43a7cd6fa2e21dac4688e1d8a7206c023ac58e5af69245303387eefad068bc9f90ee310414057f2d5a18c68a307c4c
+The state before squeeze is: 
+1b43a7cd6fa2e21dac4688e1d8a7206c023ac58e5af69245303387eefad068bc9f90ee310414057f2d5a18c68a307c4c
+state input to perm is 
+1b43a7cd6fa2e21dac4688e1d8a7206c023ac58e5af69245303387eefad068bc9f90ee310414057f2d5a18c68a307c6c
+state out from perm is 
+0ca7d183919fadc3870adb0d0c4ef1c0ea59d58483e56f794a6febacc14284132ee1520d806e98b7a8ede6aadef976aa
+The state after squeeze is: 
+0ca7d183919fadc3870adb0d0c4ef1c0ea59d58483e56f794a6febacc14284132ee1520d806e98b7a8ede6aadef976aa
+The squeez key is
+0ca7d183919fadc3870adb0d0c4ef1c0
+
