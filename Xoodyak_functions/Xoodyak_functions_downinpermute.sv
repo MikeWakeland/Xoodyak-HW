@@ -193,7 +193,7 @@ Impact: cant easily call functions after a squeeze.
         //If I change the selector pins to the shadow state I don't think I'll have to use a register to store the state since only one 
         //shadow state should be active at a time. 
       logic [383:0] down_out_trial;        
-			 
+       
        rmuxdx4_im #(384) permin1   (down_out_trial, 
               
                reset | sm_cyc                       ,state_cyclist,
@@ -204,15 +204,15 @@ Impact: cant easily call functions after a squeeze.
         ); 
         
      
-			 rregs_en #(384,GATE) downuttrial (func_outputs, down_out_trial, eph1, reset|(op_switch_next&run)); 
-				
-				
-				
-				
+       rregs_en #(384,GATE) downuttrial (func_outputs, down_out_trial, eph1, reset|(op_switch_next&run)); 
+        
+        
+        
+        
         //Created as a means to catch the state for use after a squeeze function.  
         logic [383:0] saved_squeeze;
         rregs_en #(384,GATE) hack (saved_squeeze, saved_state, eph1, reset|sm_idle&(sm_sqz_next|sm_sky_next)); 
- 					logic [383:0] permout_retarded;         
+           logic [383:0] permout_retarded;         
         logic hash_abs_exception, sqz_exception;
         
         assign hash_abs_exception =  sm_abs&hash_mode&~shadow_abs&meta_cyc;
@@ -259,7 +259,7 @@ Impact: cant easily call functions after a squeeze.
               .state_in      (permin_cd_added),
               .sbox_ctrl     (perm_ctr),
               .state_out     (permute_out),
-							.state_retarded (permout_retarded)
+              .state_retarded (permout_retarded)
           );    
               
             
@@ -331,7 +331,7 @@ Impact: cant easily call functions after a squeeze.
           input logic  [2:0]   sbox_ctrl, 
           
           output logic [383:0] state_out,
-					output logic [383:0] state_retarded
+          output logic [383:0] state_retarded
 
       );
           //----------------------------------------------------------------
@@ -439,7 +439,7 @@ Impact: cant easily call functions after a squeeze.
                                 state_interm[263:256],state_interm[271:264],state_interm[279:272],state_interm[287:280]
                               };
      
-		       assign state_retarded = { state_recycle[103:96] ,state_recycle[111:104],state_recycle[119:112],state_recycle[127:120],
+           assign state_retarded = { state_recycle[103:96] ,state_recycle[111:104],state_recycle[119:112],state_recycle[127:120],
                                 state_recycle[71:64]  ,state_recycle[79:72]  ,state_recycle[87:80]  ,state_recycle[95:88],
                                 state_recycle[39:32]  ,state_recycle[47:40]  ,state_recycle[55:48]  ,state_recycle[63:56],
                                 state_recycle[7:0]    ,state_recycle[15:8]   ,state_recycle[23:16]  ,state_recycle[31:24],                          
@@ -454,10 +454,10 @@ Impact: cant easily call functions after a squeeze.
                                 state_recycle[295:288],state_recycle[303:296],state_recycle[311:304],state_recycle[319:312],
                                 state_recycle[263:256],state_recycle[271:264],state_recycle[279:272],state_recycle[287:280]
                               };
-		 
-		 
-		 
-		 
+     
+     
+     
+     
        endmodule: permute
  
  
