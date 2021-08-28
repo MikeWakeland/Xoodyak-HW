@@ -17,15 +17,19 @@ Still need to:
 4. See if I can consolidate user's opcode vector. 
 5. Check if I can successfully call functions after squeeze/the function is still in an up() state.  
 6. Check for instability that changing user inputs can cause.  Certain "hash more" functionalities come to mind. 
+
+Code fails in a race condition when I try to replace down_input's mux condition:      (~sm_sqz&meta_sqz) with meta_sqz&~shadow_sqz  
+Impact: cant easily call functions after a squeeze.  
+
+
 */      
 
 
       module xoodyak_build(
           input logic             eph1,
-          input logic             reset,
-          
+          input logic             reset,         
           input logic [351:0]     input_data, 
-          input logic [5:0]       opmode,    
+          input logic [4:0]       opmode,    
 
           output logic [191:0]    textout,
           output logic            finished
@@ -55,9 +59,8 @@ Still need to:
             //----------------------------------------------------------------
         logic                    sm_idle,  sm_cyc, sm_run, sm_idle_next, sm_run_next, sm_cyc_next,  sm_non_next, op_switch_next,
                                  sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
-                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next, sm_hsq, sm_hsq_next, hash_mode, keyed_mode, sqz_more, initial_state, one_clock_functions; 
-        logic   [127:0]          plain_text_r, round_recycle;
-        logic   [3:0]            cycle_ctr_pr, cycle_ctr;
+                                 sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, sqz_more, initial_state, one_clock_functions; 
+				logic [4:0]       				opmode_r; 
         parameter logic GATE = 1; 
 				
         
@@ -79,15 +82,10 @@ Still need to:
        assign sm_sky_next       = (sm_idle & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next); 
                                   //I removed the _r component from opmode for timing purposes.  I also think this is valid since the user should be able to change
                                   //at any point prior to the clock cycle.  GH please advise.  
-                                  
-                                  
-       assign sqz_more =    (opmode_r[4:0]==5'b10110);  //Hash_more says that the user wants at least 128' more data than the existing hash.  
-       assign hash_mode =   opmode_r[5];
-       assign keyed_mode = ~opmode_r[5];
-       
-       
-       
-        
+                 
+       assign hash_mode =   opmode_r[4];
+       assign keyed_mode = ~opmode_r[4];
+
         rregs #(1) smir (sm_idle,    reset | sm_idle_next,   eph1);
         rregs #(1) smsr (sm_cyc,    ~reset & sm_cyc_next,    eph1);
         rregs #(1) smno (sm_non,    ~reset & sm_non_next,    eph1); //Commented when in Gimmick mode.  
@@ -114,8 +112,6 @@ Still need to:
           rregs_en #(1,GATE) shdwsky (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
           rregs_en #(1,GATE) shdwrat (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
           
-         
-
             
           //The meta state is the function that was selected two function calls ago. That is to say, the function
           //before the one that just completed.    This is important for calculating CD values in certain areas.        
@@ -130,10 +126,8 @@ Still need to:
           rregs_en #(1,GATE) metasky (meta_sky , ~reset&shadow_sky      , eph1,  reset|(op_switch_next&~sm_idle));
           rregs_en #(1,GATE) metarat (meta_rat , ~reset&shadow_rat      , eph1,  reset|(op_switch_next&~sm_idle));  
   
-    
-        logic statechange; 
+
         assign statechange = sm_idle&(sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_sky_next | sm_rat_next); //sets the perm counter to three whenever there's a state change on the next clock. 
-        
    
             //----------------------------------------------------------------
             //State Counters.  Counts how many clocks remain before a state change. 
@@ -142,7 +136,7 @@ Still need to:
           logic [2:0] perm_ctr,  perm_ctr_next;      
 
           parameter logic [2:0] PERM_INIT = 3'h3;   
-          assign op_switch_next = (perm_ctr == 3'h0);
+          assign op_switch_next = (perm_ctr == 3'h0) | one_clock_functions; 
 
           assign perm_ctr_next = perm_ctr - 1; 
                     
@@ -156,34 +150,32 @@ Still need to:
             assign finished = ~reset&sm_idle; 
 
             //----------------------------------------------------------------
-            //Register Xoodyak's inputs. 
+            //Register Xoodyak's inputs.  Instantiates the state.  
             //----------------------------------------------------------------
   
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     key_r,nonce_r;
           logic [351:0]     absdata_r, input_data_r, input_data_ri, input_data_trial;
-          logic [5:0]       opmode_r; 
+
         
 
           rregs_en #(352,GATE) txtr1  ( input_data_ri           , input_data             , eph1, sm_idle);   
-          rregs #(352) txtr2  ( input_data_r           , input_data_ri             , eph1);         
+          rregs #(352) txtr2  ( input_data_r           , input_data_ri             , eph1);  //Remember this statement is kind of fake
 					rregs_en #(352) trial (input_data_trial , input_data, eph1, statechange);
-
+                                                                  //&(perm_ctr==2'h3) | one_clock_functions)
           assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
           assign key_r    = input_data_r[351:224];
           assign absdata_r = input_data_r; 
-          rregs #(6)   opmd  (opmode_r                , opmode             , eph1);
+          rregs #(5)   opmd  (opmode_r                , opmode             , eph1);
 
-
-
-        logic [383:0] state_cyclist;
-        logic [215:0] ex_hash;
-        assign ex_hash = {216{hash_mode}};
-        
-        assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
-        //assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
-        // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
+					logic [383:0] state_cyclist;
+					logic [127:0] ex_hash;
+					assign ex_hash = {127{hash_mode}};
+					
+					assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
+					//assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
+					// So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
  
         
             
@@ -203,22 +195,22 @@ Still need to:
         
        rmuxdx4_im #(384) permin1   (func_outputs, 
               
-              shadow_cyc                           ,state_cyclist,
-              shadow_abs | shadow_non              , absorb_out,   
-              shadow_enc | shadow_dec              , crypt_down,  //crypt input.                
-              shadow_sqz | shadow_rat | shadow_sky , sqz_down
-              //                                       state_cyclist
+               reset | shadow_cyc                           ,state_cyclist,
+              ~reset & shadow_abs | shadow_non              , absorb_out,   
+              ~reset & shadow_enc | shadow_dec              , crypt_down,               
+              ~reset & shadow_sqz | shadow_rat | shadow_sky , sqz_down
+
         ); 
         
         
+				//Created as a means to catch the state for use after a squeeze function.  
         logic [383:0] saved_squeeze;
-        rregs_en #(384,GATE) sqzrecovery (saved_squeeze, saved_state, eph1, sm_idle&(sm_sqz_next|sm_sky_next)); 
+        rregs_en #(384,GATE) hack (saved_squeeze, saved_state, eph1, reset|sm_idle&(sm_sqz_next|sm_sky_next)); 
          
 				logic hash_abs_exception, sqz_exception;
 				
-				assign hash_abs_exception =  sm_abs&hash_mode&~shadow_abs&shadow_cyc;
-				assign sqz_exception = (shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky);    
-				
+				assign hash_abs_exception =  sm_abs&hash_mode&shadow_abs&meta_cyc;
+				assign sqz_exception = (shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky);
         rmuxd4_im #(384) exceptionhandler (saved_state, 
           initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
           hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
@@ -227,24 +219,13 @@ Still need to:
         );
         
 
-        
-        //The no kidding text output, doesn't need to be registered since there's only one gate inbetween that and the output text.  
-      logic [191:0] ex_encdone, ex_sqzdone, ex_decdone, ex_skydone, ex_rat;
-
-
-      assign ex_encdone = {128{shadow_enc}};  //abs was here?
-      assign ex_sqzdone = {128{shadow_sqz}};   // nonce waas here?
-      assign ex_decdone = {128{shadow_dec}};
-      assign ex_skydone = {128{shadow_sky}};
-      assign ex_rat     = {128{shadow_rat}};
-      
-
-    
-    rmuxd4_im #(192) txtut (  textout ,
-            sm_idle&shadow_enc,       saved_state[383:192],
-            sm_idle&shadow_dec,        textin_r^permute_out[383:192],
-            sm_idle&shadow_sqz,       {permute_out[383:256],{64{1'b0}}},
-            '0);                              
+          //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
+				rmuxd4_im #(192) txtut (  textout ,
+            sm_idle&shadow_enc											,saved_state[383:192],
+            sm_idle&shadow_dec											,textin_r^permute_out[383:192],
+            sm_idle&shadow_sqz											,{permute_out[383:256],{64{1'b0}}},
+            '0
+				);                              
     
     
 
@@ -273,8 +254,10 @@ Still need to:
               .state_out     (permute_out)
           );    
               
+						
+							
             //----------------------------------------------------------------
-            //Permute post processing --- Modifies the permute output for recyclying.             
+            //Permute post processing --- Modifies the permute output for recyclying through the down() function and associated logic.             
             //----------------------------------------------------------------          
           
           //This performs the absorb manipulation required on the permute output:
@@ -286,8 +269,11 @@ Still need to:
     
   
         logic [383:0] abs_down_modifier, absorb_out2, abs_keyed, abs_hash, abs_non, down_input;
-        
-        assign down_input =  (sm_cyc | (~sm_sqz&shadow_sqz)) ? saved_state : permute_out;
+				logic [191:0] ex_rat;
+				logic[191:0] ex_shdw_dec;
+        assign ex_shdw_dec = {192{shadow_dec}};
+
+        //Calculates the absorb input, this is the part that is XOR'd with the state during an absorb.  
         assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~meta_non, ~meta_non};
         assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~meta_abs, ~meta_abs};
         assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h0};
@@ -300,22 +286,22 @@ Still need to:
                       shadow_abs&hash_mode       ,abs_hash,
                       384'h0
         ); 
-        
-
-         assign absorb_out = abs_down_modifier^down_input;
+				 //For certain functions the saved state is XOR'd instead of the permute from the previous round.
+				 //This is required when an up() function is not performed on the state, such as after a sqz or sky
+         //meta_sqz&~shadow_sqz  - saved state enters a race condition.  Necessary for post sqz processing. 
+         assign down_input =  (sm_cyc | ((~sm_sqz&meta_sqz)|(~sm_sky&meta_sky))) ? saved_state : permute_out;
+         
         //////////////////////
-      
-          logic[191:0] ex_shdw_dec;
-          assign ex_shdw_dec = {192{shadow_dec}};
-          
-          
-           assign crypt_down = { textin_r^(down_input[383:192]&~ex_shdw_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };
-//                                                                                              ^^^^ This term was conspicuously absent ('01'), but clearly algoirthmically required.  
-           
-        
-        assign sqz_down[384:256] = {down_input[383:377], down_input[376]^(sqz_more), down_input[375:256]}&~ex_rat; //Instability in sqz_more 
-        assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~shadow_sqz), down_input[247:0]};         
-                                                           //~down_input[248]           
+       assign ex_rat     = {128{shadow_rat}}; 
+
+          //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
+          assign absorb_out = abs_down_modifier^down_input;
+          assign crypt_down = { textin_r^(down_input[383:192]&~ex_shdw_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
+					assign sqz_down[384:256] = {down_input[383:377], down_input[376]^(shadow_sqz), down_input[375:256]}&~ex_rat;
+					assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~shadow_sqz), down_input[247:0]};   
+                                                                                            
+
+                                                                  
 
 
         endmodule: xoodyak_build   
