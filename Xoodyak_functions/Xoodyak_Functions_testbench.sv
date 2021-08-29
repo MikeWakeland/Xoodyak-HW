@@ -49,16 +49,7 @@
 	logic [191:0] plaintext_t; //[47:0]
 	
 	
-	
-	
-	// This  testbench is for cyclist key -> absorb -> absorb -> decrypt -> decrypt 
-	logic [8:0][351:0] input_data_t; 
-	assign plaintext_t = {192'h4d4e4f5051525354555657584142434445464748494a4b4c};
-	assign key_t = 128'h38393a3b3c3d3e3f3031323334353637;  //ascii text:  0123456789:;<=>? orig: nonce
-	assign nonce_t= 128'h494a4b4c4d4e4f504142434445464748;  //ascii text: ABCDEFGHIJKLMNOP orig: asso_data
-	assign asso_data_t = 352'h6162636465666768696a6b6c6d6e6f706162636465666768696a6b6c6d6e6f706162636465666768696a6b6c; //ascii text: iabcdefghijkiabcdefghijkiabcdefg orig: key
-	
-	
+
 	//use SOFTWARE text to generate the hex values to run through hardware.  THis is much more robust.  
 
 	logic [191:0] plaintext, ciphertext;
@@ -89,18 +80,19 @@ assign ciphertext	= (opmode_ctr > 21)? 192'h87a06d5561b0d87c20a12db5d34783258ff7
 				 352'h0};				 //idle 
 
 	
-	logic[47:0][5:0] opmode_t;
-	assign opmode_t = { 6'h0, 6'h0,
-										 6'h1, 6'h1, 6'h1, 6'h1, 6'h1, 6'h1,
-										 6'h2, 6'h2, 6'h2, 6'h3, 6'h3, 6'h3,
-										 6'h3, 6'h3, 6'h3, 6'h3, 6'h3, 6'h3,
-										  6'h5, 6'h5, 6'h5, 
-										 6'h5, 6'h5, 6'h5,  6'h5, 6'h5, 6'h5, //10 0f 0e 0d 0c 0b 
-							//			 6'h5, 6'h5, 6'h5, 6'h5, 6'h5, 6'h5,  //
-										// 6'h6, 6'h6, 6'h6, 6'h6, 6'h6, 6'h6,
-										 6'h5, 6'h5, 6'h5, 6'h5, 6'h5, 6'h5,
-										 6'h0, 6'h0, 6'h0, 6'h0, 6'h4, 6'h4, 6'h4, 6'h4, 6'h4, 6'h4,
-										 6'h4, 6'h4, 6'h4};
+
+										 
+										 	logic[47:0][5:0] opmode_t;
+	assign opmode_t = { 6'h00, 6'h10, 6'h10, 6'h10, 6'h10, 6'h10,
+										 6'h11, 6'h11, 6'h11, 6'h11, 6'h11, 6'h11,
+										 6'h13, 6'h13, 6'h13, 6'h13, 6'h13, 6'h13,
+										 6'h13, 6'h13, 6'h13, 6'h36, 6'h36, 6'h36,
+										 6'h36, 6'h16, 6'h16, 6'h16, 6'h16, 6'h16,
+										 6'h16, 6'h16, 6'h1, 6'h1, 6'h1, 6'h1,
+										 6'h2, 6'h2, 6'h2, 6'h2, 6'h14, 6'h14,
+										 6'h14, 6'h14, 6'h14, 6'h14, 6'h14, 6'h14
+										 }; 
+										 
 										 
 										 
 /* 	assign opmode_t = {5'h20, 5'h20, 5'h20, 5'h20, 5'h20, 5'h20,
@@ -141,15 +133,16 @@ assign opmode_wire=opmode_t[opmode_ctr];
 	
 	
 	logic [127:0] authdata_o;
-	logic [191:0] textout_o;
+	logic [191:0] textout_o, textout_t;
 	logic encdone, sqzdone;
 	logic verif_dec;
   logic verif_enc;	
-	logic textout_t, finished_t;
+	logic finished_t;
 	
 	logic [351:0] datainput_wire;
-	
-	assign datainput_wire = input_data_t[opmode_wire]; //opmode_t[opmode_ctr]
+	logic [3:0] funccall;
+	assign funccall = opmode_wire[3:0];
+	assign datainput_wire = input_data_t[funccall]; //opmode_t[opmode_ctr]
 				
 /////////////////////////////////////////////////////End fake input section///////////////////////////////////////////////////////		
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -157,11 +150,11 @@ assign opmode_wire=opmode_t[opmode_ctr];
 
 
 
-         xoodyak_build xoodyak_build(
+         xoodyak_build build (
               .eph1 				(eph1),
               .reset 			  (reset),
      
-              .input_data   (input_data_t[opmode_wire]),
+              .input_data   (input_data_t[funccall]),
               .opmode 			(opmode_wire), //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
               .textout 			(textout_t),

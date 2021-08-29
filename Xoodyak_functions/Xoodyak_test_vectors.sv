@@ -1,6 +1,6 @@
 	 This  testbench is for cyclist key -> absorb -> absorb -> decrypt -> decrypt 
 		
-	/*logic [8:0][351:0] input_data_t; 
+	logic [8:0][351:0] input_data_t; 
 	assign plaintext_t = {192'h4d4e4f5051525354555657584142434445464748494a4b4c};
 	assign key_t = 128'h38393a3b3c3d3e3f3031323334353637;  //ascii text:  0123456789:;<=>? orig: nonce
 	assign nonce_t= 128'h494a4b4c4d4e4f504142434445464748;  //ascii text: ABCDEFGHIJKLMNOP orig: asso_data
@@ -37,7 +37,7 @@ assign ciphertext	= (opmode_ctr > 21)? 192'h87a06d5561b0d87c20a12db5d34783258ff7
 										 6'h0, 6'h0, 6'h0, 6'h0, 6'h4, 6'h4, 6'h4, 6'h4, 6'h4, 6'h4,
 										 6'h4, 6'h4, 6'h4};
 										 
-										 */
+										 
 										 
 
 
@@ -94,18 +94,22 @@ state out from perm is
 01993b3a0b4c820ecb7958a1bc6ee8c6c993f0b805cfcd9925dbd432e8925bf7e0649a51ad281acd0180ab3261a753a8
 state after absorbing AD is 
 60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a753a8
+60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a75328
 Before CRYPTO, the state is: 
 60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a753a8
 state input to perm is 
+60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a75328
 60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a75328
 state out from perm is 
 caee220530e28b2875f77aed9205c061cab118ad9136457c65dfe435e5cafc46cae7d8ad76076bd5d88a9f00a9ce6948
 Before Mysterywrite, the state is: 
 caee220530e28b2875f77aed9205c061cab118ad9136457c65dfe435e5cafc46cae7d8ad76076bd5d88a9f00a9ce6948
+caee220530e28b2875f77aed9205c061cab118ad9136457c
 down input is: 
 4d4e4f5051525354555657584142434445464748494a4b4c
 After Mysterywrite, the state is: 
-87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e3064dfe435e5cafc46cae7d8ad76076bd5d88a9f00a9ce6948
+87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e30 64dfe435e5cafc46cae7d8ad76076bd5d88a9f00a9ce6948
+4d4e4f5051525354555657584142434445464748494a4b4c 64dfe435e5cafc46cae7d8ad76076bd5d88a9f00a9ce6948
 state input to perm is 
 87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e3064dfe435e5cafc46cae7d8ad76076bd5d88a9f00a9ce6948
 state out from perm is 
@@ -178,6 +182,7 @@ Domain 0x01 triggers
 0
 state input to perm is 
 dd3a0ba5777dd1e999e04fba5e80abc6f66d621d12bd00dfe7a2bf5c11bede5f275920b6d47c0e54ae6a9fb3d476509d
+dd3a0ba5777dd1e999e04fba5e80abc6f66d621d12bd00dfe7a2bf5c11bede5f275920b6d47c0e54ae6a9fb3d476509d
 state out from perm is 
 f401f6c2c20d62dd6c0f2524b1b83f425d21b2e2479fbf8c1e3738955305b43333d174ca6951191052200b37eb96214d
 Domain 0x01 triggers
@@ -224,7 +229,22 @@ xoocycle_cyclist(&cyc, (CU8P)"", 0, xoocycle_empty, 0,
 	
 	-----------------------------------------------------------------------
 	
-	cyclist -> absorb -> absorb -> sky. 
+	cyclist -> absorb -> absorb -> sqz.  (hash mode) 
+	
+	
+										 	logic[47:0][5:0] opmode_t;
+	assign opmode_t = { 6'h00, 6'h10, 6'h10, 6'h10, 6'h10, 6'h10,
+										 6'h11, 6'h11, 6'h11, 6'h11, 6'h11, 6'h11,
+										 6'h13, 6'h13, 6'h13, 6'h13, 6'h13, 6'h13,
+										 6'h13, 6'h13, 6'h13, 6'h36, 6'h36, 6'h36,
+										 6'h36, 6'h16, 6'h16, 6'h16, 6'h16, 6'h16,
+										 6'h16, 6'h16, 6'h16, 6'h16, 6'h16, 6'h16,
+										 6'h16, 6'h16, 6'h16, 6'h16, 6'h14, 6'h14,
+										 6'h14, 6'h14, 6'h14, 6'h14, 6'h14, 6'h14
+										 }; 
+										 
+	
+	
 The key in hex is:
 38393a3b3c3d3e3f3031323334353637
 state before absorption in cyclist is 
