@@ -17,9 +17,6 @@ Still need to:
 4. See if I can consolidate user's opcode vector.  (x)
 5. Check if I can successfully call functions after squeeze/the function is still in an up() state.  
 
-Code fails in a race condition when I try to replace down_input's mux condition:      (~sm_sqz&meta_sqz) with meta_sqz&~shadow_sqz  
-Impact: cant easily call functions after a squeeze.  
-
 
 */      
 
@@ -60,7 +57,7 @@ Impact: cant easily call functions after a squeeze.
                                  sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
                                  sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, sqz_more, initial_state, one_clock_functions, statechange, run_next, 
 															 	 shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,  												 
-																 meta_cyc, meta_non, meta_abs, meta_enc, meta_dec, meta_sqz, meta_rat, meta_sky ;  											 
+																 meta_cyc;  											 
         logic [4:0]              opmode_r; 
         parameter logic GATE = 1; 
         
@@ -115,18 +112,8 @@ Impact: cant easily call functions after a squeeze.
           rregs_en #(1,GATE) shdwrat (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
           
             
-          //The meta state is the function that was selected two function calls ago. That is to say, the function
-          //before the one that just completed.    This is important for calculating CD values in certain areas.        
-
+          //I created the meta state to track function calls before the previous one, however only the meta_cyc state was used.  So I deleted the others.    
           rregs_en #(1,GATE) metacyc (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
-          rregs_en #(1,GATE) metanon (meta_non , ~reset&shadow_non      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) metaabs (meta_abs , ~reset&shadow_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) metaenc (meta_enc , ~reset&shadow_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) metadec (meta_dec , ~reset&shadow_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
-          rregs_en #(1,GATE) metasqz (meta_sqz , ~reset&shadow_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) metasky (meta_sky , ~reset&shadow_sky      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) metarat (meta_rat , ~reset&shadow_rat      , eph1,  reset|(op_switch_next&~sm_idle));  
-  
 
         assign statechange = sm_idle&(sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_sky_next | sm_rat_next); //sets the perm counter to three whenever there's a state change on the next clock. 
    
@@ -165,14 +152,10 @@ Impact: cant easily call functions after a squeeze.
           rregs_en #(352) idata (input_data_r,				 input_data, eph1, sm_idle_next|reset);		
           rregs_en #(5)   opmd  (opmode_r,						 reset? '0: opmode             , eph1, sm_idle_next|initial_state|reset);
 
-
-
           assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
           assign key_r    = input_data_r[351:224];
           assign absdata_r = input_data_r; 
-
-
 
           assign ex_hash = {127{hash_mode}};        
           assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
@@ -186,7 +169,7 @@ Impact: cant easily call functions after a squeeze.
             //----------------------------------------------------------------        
             
         logic [383:0] permute_in, permout_advanced, absorb_out , nonce_out, state, permin_cd_added, permin, sqz_down, rat_state, down_out,crypt_down, permout_retarded;            
-        logic hash_abs_exception, sqz_exception;
+        logic hash_abs_exception, sqz_exception, sqz_exception_trial;
  
 			 rregs_en #(384,GATE) statereg (state, down_out, eph1, reset|(op_switch_next&run)); 
 				
@@ -198,7 +181,7 @@ Impact: cant easily call functions after a squeeze.
 
         
         assign hash_abs_exception =  sm_abs&hash_mode&shadow_abs&meta_cyc;
-        assign sqz_exception = (shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky);
+        assign sqz_exception = ~sm_idle&((shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky));
 				
         rmuxd4_im #(384) exceptionhandler (permin, 
           initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
@@ -220,7 +203,7 @@ Impact: cant easily call functions after a squeeze.
         );                              
     
         
-         ///Adds the Cu value for functions, if applicable. Not applicable if the same function is called more than once in a row (meta_state==sm_state).  
+         ///Adds the Cu value for functions, if applicable. Not applicable if the same function is called more than once in a row (shadow_state==sm_state).  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
 				 /*
 				 Cu values:
@@ -231,9 +214,9 @@ Impact: cant easily call functions after a squeeze.
 				 */
          logic [7:0] cu;
          assign  cu[7]   = ((sm_enc_next|sm_enc) & ~shadow_enc) |((sm_dec_next|sm_dec) & ~shadow_dec);
-         assign  cu[6]   = (sm_sqz_next|sm_sqz)&keyed_mode;
-				 assign	 cu[5]   =  sm_sky_next|sm_sky ;
-         assign  cu[4]   =	sm_rat_next|sm_rat;
+         assign  cu[6]   = ~shadow_sqz&(sm_sqz_next|sm_sqz)&keyed_mode;
+				 assign	 cu[5]   =  ~shadow_sky&(sm_sky_next|sm_sky) ;
+         assign  cu[4]   =	(sm_rat_next|sm_rat);
          assign  cu[3:0] =   4'h0; 
      
         assign permin_cd_added =  {permin[383:8], permin[7:0]^cu};    
@@ -289,7 +272,6 @@ Impact: cant easily call functions after a squeeze.
         ); 
          //For certain functions the saved state is XOR'd instead of the permute from the previous round.
          //This is required when an up() function is not performed on the state, such as after a sqz or sky
-         //meta_sqz&~shadow_sqz  - saved state enters a race condition.  Necessary for post sqz processing. 
          assign down_input =  (sm_cyc | ((~sm_sqz&shadow_sqz)|(~sm_sky&shadow_sky))) ? permin : permout_advanced;
          
         //////////////////////

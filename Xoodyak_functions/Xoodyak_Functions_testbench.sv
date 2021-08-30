@@ -65,7 +65,7 @@ assign plaintext	= (opmode_ctr > 7)? 192'h4d4e4f50515253545556575841424344454647
 	//use SOFTWARE text to generate the hex values to run through hardware.  THis is much more robust.  
 
 	logic [191:0] ciphertext;
-assign ciphertext	= (opmode_ctr > 21)? 192'h87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e30 : 192'hbb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e;
+assign ciphertext	= (opmode_ctr[8:0] > 186)? 192'h87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e30 : 192'hbb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e;
 	                                                                                                            
 	assign input_data_t = {
 	       352'h0,  //sky input
@@ -93,15 +93,14 @@ keyed initialize -> nonce -> absorb -> absorb -> squeezekey() */
 	
 6'h10, 6'h11, 6'h11, 6'h13, 6'h13, 6'h13, 6'h16, 6'h16,  6'h13, 6'h13,             //   hash -> abs -> abs -> abs -> sqz -> sqz -> abs -> -abs
 6'h0 , 6'h1 , 6'h2 , 6'h3 , 6'h3,  6'h4,  6'h4 , 6'h4 , 6'h6,  6'h6, 6'h6,  // cyc key -> non -> abs -> abs -> enc -> enc -> sqz -> sqz
-6'h0 , 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h5,  6'h5 , 6'h8, 6'h8,       // cyc key -> non -> abs -> abs -> dec -> dec -> sky
+6'h0 , 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h5,  6'h5 , 6'h5 , 6'h5 ,  6'h8, 6'h8,       // cyc key -> non -> abs -> abs -> dec -> dec -> sky
 6'h0 , 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h4,  6'h4 , 6'h7,        //
 
 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
-6'h0, 6'h0, 6'h0, 
 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
-6'h0, 6'h0, 6'h0, 
-6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 
-6'h0
+6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
+6'h0, 6'h0, 6'h0, 6'h0
+
  
 
 //6'h0 , 6'h1 , 6'h2 , 6'h2 , 6'h5,  6'h5 , 6'h6        //34
