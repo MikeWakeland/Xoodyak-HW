@@ -31,7 +31,7 @@ Impact: cant easily call functions after a squeeze.
           input logic [4:0]       opmode,    
 
           output logic [191:0]    textout,
-          output logic            finished
+          output logic            textout_valid
           
         );
         
@@ -74,18 +74,19 @@ Impact: cant easily call functions after a squeeze.
 
        assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
        assign sm_cyc_next       = (sm_idle & (opmode_r[3:0] == 4'b0001)) ;        
-       assign sm_non_next       = (sm_idle & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next); 
-       assign sm_abs_next       = (sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next); // Not Keymode only
-       assign sm_enc_next       = (sm_idle & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next);
-       assign sm_dec_next       = (sm_idle & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next); 
-       assign sm_sqz_next       = (sm_idle & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next);   //Not keyed mode only.
-       assign sm_rat_next       = (sm_idle & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next); 
-       assign sm_sky_next       = (sm_idle & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next); 
-                                  //I removed the _r component from opmode for timing purposes.  I also think this is valid since the user should be able to change
-                                  //at any point prior to the clock cycle.  GH please advise.  
+       assign sm_non_next       = ((sm_idle & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
+       assign sm_abs_next       = ((sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
+       assign sm_enc_next       = ((sm_idle & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
+       assign sm_dec_next       = ((sm_idle & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
+       assign sm_sqz_next       = ((sm_idle & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state;   //Not keyed mode only.
+       assign sm_rat_next       = ((sm_idle & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
+       assign sm_sky_next       = ((sm_idle & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
                  
-       assign hash_mode =   opmode_r[4];
-       assign keyed_mode = ~opmode_r[4];
+       
+			 
+			 rregs_en #(1) hashmd (hash_mode,  ~reset &  opmode_r[4], eph1, sm_cyc_next|reset);
+			 rregs_en #(1) keymd  (keyed_mode, ~reset & ~opmode_r[4], eph1, sm_cyc_next|reset); 
+
 
         rregs #(1) smir (sm_idle,    reset | sm_idle_next,   eph1);
         rregs #(1) smsr (sm_cyc,    ~reset & sm_cyc_next,    eph1);
@@ -146,8 +147,8 @@ Impact: cant easily call functions after a squeeze.
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
-            
-            assign finished = ~reset&(~|textout_r); 
+                logic [191:0] textout_r; 
+            assign textout_valid = ~reset&(|textout_r); 
 
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  Instantiates the state.  
@@ -160,17 +161,12 @@ Impact: cant easily call functions after a squeeze.
           logic [127:0]     ex_hash;
         
 
-/*
-          rregs_en #(352) idata (input_data_r , input_data, eph1, sm_idle_next);
-          rregs_en #(352) trial (input_data_trial , input_data, eph1, statechange);					
-          rregs_en #(5)   opmd  (opmode_r                , opmode             , eph1, sm_idle_next);
 
-*/
+          rregs_en #(352) idata (input_data_r,				 input_data, eph1, sm_idle_next|reset);		
+          rregs_en #(5)   opmd  (opmode_r,						 reset? '0: opmode             , eph1, sm_idle_next|initial_state|reset);
 
-          rregs_en #(352) idata (input_data_r , input_data, eph1, statechange);
-          rregs_en #(352) trial (input_data_trial , input_data, eph1, sm_idle_next);					
-          rregs #(5)   opmd  (opmode_r                , opmode             , eph1);
-					
+
+
           assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
           assign key_r    = input_data_r[351:224];
@@ -189,7 +185,7 @@ Impact: cant easily call functions after a squeeze.
             //Permute Inputs 
             //----------------------------------------------------------------        
             
-        logic [383:0] permute_in, permout_advanced, absorb_out , nonce_out, state, permin_cd_added, saved_state, sqz_down, rat_state, down_out,crypt_down, permout_retarded;            
+        logic [383:0] permute_in, permout_advanced, absorb_out , nonce_out, state, permin_cd_added, permin, sqz_down, rat_state, down_out,crypt_down, permout_retarded;            
         logic hash_abs_exception, sqz_exception;
  
 			 rregs_en #(384,GATE) statereg (state, down_out, eph1, reset|(op_switch_next&run)); 
@@ -197,27 +193,27 @@ Impact: cant easily call functions after a squeeze.
 				
         //Created as a means to catch the state for use after a squeeze function.  
         logic [383:0] saved_squeeze;
-        rregs_en #(384,GATE) hack (saved_squeeze, saved_state, eph1, reset|sm_idle&(sm_sqz_next|sm_sky_next)); 
+        rregs_en #(384,GATE) hack (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
 				       
 
         
         assign hash_abs_exception =  sm_abs&hash_mode&shadow_abs&meta_cyc;
         assign sqz_exception = (shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky);
 				
-        rmuxd4_im #(384) exceptionhandler (saved_state, 
+        rmuxd4_im #(384) exceptionhandler (permin, 
           initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
           hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
           sqz_exception                            , saved_squeeze,   //requires the previous state value since the last permute does not affect the state.  
           state
         );
         
-    logic [191:0] textout_r; 
+
     rregs #(192) texttrial (textout_r, textout, eph1); 
 
 
           //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
         rmuxd4_im #(192) txtut (  textout ,
-            shadow_enc                      ,saved_state[383:192],
+            shadow_enc                      ,state[383:192],
             shadow_dec                      ,textin_r^permout_retarded[383:192],
             (shadow_sqz|shadow_sky)         ,{state[383:377], state[376]^shadow_sqz, state[375:256],{64{1'b0}}},
             '0
@@ -226,7 +222,7 @@ Impact: cant easily call functions after a squeeze.
     
 
         
-         ///Adds the Cd value for crypt functions, if applicable. Not applicable if multiple crypt or decyrpt functions in a row.  
+         ///Adds the Cu value for functions, if applicable. Not applicable if the same function is called more than once in a row (meta_state==sm_state).  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
 				 /*
 				 Cu values:
@@ -242,7 +238,7 @@ Impact: cant easily call functions after a squeeze.
          assign  cu[4]   =	sm_rat_next|sm_rat;
          assign  cu[3:0] =   4'h0; 
      
-        assign permin_cd_added =  {saved_state[383:8], saved_state[7:0]^cu};    
+        assign permin_cd_added =  {permin[383:8], permin[7:0]^cu};    
 
         
             //----------------------------------------------------------------
@@ -282,7 +278,7 @@ Impact: cant easily call functions after a squeeze.
         //Calculates the absorb input, this is the part that is XOR'd with the state during an absorb.  
         assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
         assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
-        assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h0};
+        assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h0};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this....
         
         
         //To replace the absorb_out rats nest.  
@@ -295,7 +291,7 @@ Impact: cant easily call functions after a squeeze.
          //For certain functions the saved state is XOR'd instead of the permute from the previous round.
          //This is required when an up() function is not performed on the state, such as after a sqz or sky
          //meta_sqz&~shadow_sqz  - saved state enters a race condition.  Necessary for post sqz processing. 
-         assign down_input =  (sm_cyc | ((~sm_sqz&shadow_sqz)|(~sm_sky&shadow_sky))) ? saved_state : permout_advanced;
+         assign down_input =  (sm_cyc | ((~sm_sqz&shadow_sqz)|(~sm_sky&shadow_sky))) ? permin : permout_advanced;
          
         //////////////////////
        assign ex_rat     = {128{sm_rat}}; 

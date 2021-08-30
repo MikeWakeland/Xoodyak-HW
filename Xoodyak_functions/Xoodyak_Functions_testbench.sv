@@ -54,7 +54,6 @@
 
 	logic [191:0] plaintext, ciphertext;
 assign plaintext	= (opmode_ctr > 7)? 192'h4d4e4f5051525354555657584142434445464748494a4b4c : 192'hffffffffffffffffffffffffffffffffffffffffffffffff;
-assign ciphertext	= (opmode_ctr > 21)? 192'h87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e30 : 192'hbb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e;
 	
 	logic [8:0][351:0] input_data_t; 
 	assign plaintext_t = {192'h4d4e4f5051525354555657584142434445464748494a4b4c};
@@ -82,55 +81,46 @@ assign ciphertext	= (opmode_ctr > 21)? 192'h87a06d5561b0d87c20a12db5d34783258ff7
 	
 
 										 
-										 	logic[47:0][5:0] opmode_t;
-	assign opmode_t = { 6'h00, 6'h10, 6'h10, 6'h10, 6'h10, 6'h10,
-										 6'h11, 6'h11, 6'h11, 6'h11, 6'h11, 6'h11,
-										 6'h13, 6'h13, 6'h13, 6'h13, 6'h13, 6'h13,
-										 6'h13, 6'h13, 6'h13, 6'h36, 6'h36, 6'h36,
-										 6'h36, 6'h16, 6'h16, 6'h16, 6'h16, 6'h16,
-										 6'h16, 6'h16, 6'h1, 6'h1, 6'h1, 6'h1,
-										 6'h2, 6'h2, 6'h2, 6'h2, 6'h14, 6'h14,
-										 6'h14, 6'h14, 6'h14, 6'h14, 6'h14, 6'h14
-										 }; 
-										 
-										 
-										 
-/* 	assign opmode_t = {5'h20, 5'h20, 5'h20, 5'h20, 5'h20, 5'h20,
-	                   5'h21, 5'h21, 5'h21, 5'h21, 5'h21, 5'h21,
-	                   5'h23, 5'h23, 5'h23, 5'h23, 5'h23, 5'h23,
-										 5'h3, 5'h3, 5'h3, 5'h3, 5'h3, 5'h3,
-										 5'h5, 5'h5, 5'h5, 5'h5, 5'h5, 5'h5, 
-										 5'h5, 5'h5, 5'h5, 5'h5, 5'h5, 5'h5, 	
-										 5'h6, 5'h6, 5'h6, 5'h6, 5'h6, 5'h6,
-										 5'h6, 5'h6, 5'h6, 5'h6, 5'h6, 5'h6
-										 };										 
-										  */
-										 
-/*
+										 	logic[72:1][5:0] opmode_t;
+	
+/* 	Test vectors run:
 Hash initialize -> absorb -> absorb -> squeeze -> squeeze
 Keyed initialize -> nonce -> absorb -> absorb -> crypt -> crypt -> squeeze(keyed mode) 
-keyed initialize -> nonce -> absorb -> absorb -> squeezekey() 
-	assign opmode_t = {5'h0, 5'h0, 5'h0, 5'h0, 5'h0, 5'h0,
-										 5'h1, 5'h1, 5'h1, 5'h1, 5'h1, 5'h1,
-										 5'h2, 5'h2, 5'h2, 5'h2, 5'h2, 5'h2,
-										 5'h3, 5'h3, 5'h3, 5'h3, 5'h3, 5'h3, 
-										 5'h4, 4'h4, 4'h4, 4'h4, 4'h4, 4'h4,
-										 5'h5, 5'h5, 5'h5, 5'h5, 5'h5, 5'h5, 
-										 5'h6, 5'h6, 5'h6, 5'h6, 5'h6, 5'h6,
-										 5'h7, 5'h7, 5'h7, 5'h7, 5'h7, 5'h7};
-*/										 
+keyed initialize -> nonce -> absorb -> absorb -> squeezekey() */
+	
+	
+	assign opmode_t = { 
+	
+6'h10, 6'h11, 6'h11, 6'h13, 6'h13, 6'h13, 6'h16, 6'h16,  6'h13, 6'h13,             //   hash -> abs -> abs -> abs -> sqz -> sqz -> abs -> -abs
+6'h0 , 6'h1 , 6'h2 , 6'h3 , 6'h3,  6'h4,  6'h4 , 6'h6,  6'h6, 6'h6,  // cyc key -> non -> abs -> abs -> enc -> enc -> sqz -> sqz
+6'h0 , 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h5,  6'h5 , 6'h8, 6'h8,       // cyc key -> non -> abs -> abs -> dec -> dec -> sky
+6'h0 , 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h4,  6'h4 , 6'h7,        //
+
+6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
+6'h0, 6'h0, 6'h0, 
+6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
+6'h0, 6'h0, 6'h0, 
+6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
+6'h0
+ 
+
+//6'h0 , 6'h1 , 6'h2 , 6'h2 , 6'h5,  6'h5 , 6'h6        //34
+
+		 }; 
 										 
+																		 
 										 
 	logic [191:0] plaintext_wire;
 assign plaintext_wire = plaintext_t[opmode_ctr];	
 										 
-	logic [5:0] opmode_ctr, opmode_ctr_next;
-initial opmode_ctr = 6'h2e;
+	logic [8:0] opmode_ctr, opmode_ctr_next;
+initial opmode_ctr = 9'h120;
 assign opmode_ctr_next = opmode_ctr - 1;
-rregs #(6) opctr (opmode_ctr, reset | (opmode_ctr == 0) ? 6'h2e : opmode_ctr_next, eph1);	
+rregs #(9) opctr (opmode_ctr, reset | (opmode_ctr == 0) ? 9'h120 : opmode_ctr_next, eph1);	
 logic [4:0] opmode_wire;
-assign opmode_wire=opmode_t[opmode_ctr];
-	
+assign opmode_wire=opmode_t[opmode_ctr[8:2]];
+logic [6:0]	ctr_wire;
+assign ctr_wire = opmode_ctr[8:2]; 
 	
 	logic [127:0] authdata_o;
 	logic [191:0] textout_o, textout_t;
@@ -158,7 +148,7 @@ assign opmode_wire=opmode_t[opmode_ctr];
               .opmode 			(opmode_wire), //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
               .textout 			(textout_t),
-              .finished 		(finished_t)
+              .textout_valid 		(finished_t)
           
         );
 
