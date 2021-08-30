@@ -219,8 +219,6 @@ Impact: cant easily call functions after a squeeze.
             '0
         );                              
     
-    
-
         
          ///Adds the Cu value for functions, if applicable. Not applicable if the same function is called more than once in a row (meta_state==sm_state).  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
@@ -278,7 +276,8 @@ Impact: cant easily call functions after a squeeze.
         //Calculates the absorb input, this is the part that is XOR'd with the state during an absorb.  
         assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
         assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
-        assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h0};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this....
+        assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h1};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
+				                                                        //Also the software doesn't recognize the down() function
         
         
         //To replace the absorb_out rats nest.  
