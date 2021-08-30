@@ -169,7 +169,7 @@ Still need to:
             //----------------------------------------------------------------        
             
         logic [383:0] permute_in, permout_advanced, absorb_out , nonce_out, state, permin_cd_added, permin, sqz_down, rat_state, down_out,crypt_down, permout_retarded;            
-        logic hash_abs_exception, sqz_exception, sqz_exception_trial;
+        logic hash_abs_exception, sqz_exception;
  
 			 rregs_en #(384,GATE) statereg (state, down_out, eph1, reset|(op_switch_next&run)); 
 				
