@@ -70,14 +70,12 @@
             //  The mode can either be null, hash, or keyed.  It is null on reset.  hash/keyed modes are set upon calls to cyclist().  The mode endures until another
             //  call to cyclist.  Certain modes can only be called in keyed mode, and have different imput vector lengths in hash mode.            
             //----------------------------------------------------------------
-            
-            
-            
+
               
           logic                    sm_idle,  sm_cyc, sm_run, sm_idle_next, sm_cyc_next,  sm_non_next, op_switch_next,
                                    sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
-                                   sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, sqz_more, initial_state, one_clock_functions, statechange, run_next, 
-                                    shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
+                                   sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, initial_state, one_clock_functions, statechange, run_next, 
+                                   shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
                                    meta_cyc, permute_run_next;                         
           logic [4:0]              opmode_r; 
           parameter logic GATE = 1; 
@@ -177,31 +175,30 @@
  
         
             
-					//----------------------------------------------------------------
-					//Permute Inputs 
-					//----------------------------------------------------------------        
+          //----------------------------------------------------------------
+          //Permute Inputs 
+          //----------------------------------------------------------------        
             
-					logic [383:0] permute_in, permute_out, absorb_out , nonce_out, state, permin_cd_added, permin, sqz_down, rat_state, down_out,crypt_down;            
-					logic hash_abs_exception, sqz_exception;
-	 
-					rregs_en #(384,GATE) statereg_3 (state, down_out, eph1, reset|(op_switch_next&run)); 
-					
-					
-					//Created as a means to catch the state for use after a squeeze function.  
-					logic [383:0] saved_squeeze;
-					rregs_en #(384,GATE) hack_4 (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
-								 
+          logic [383:0] permute_in, permute_out, absorb_out , state, permin_cd_added, permin, sqz_down, down_out,crypt_down;            
+          logic hash_abs_exception, sqz_exception;
+   
+          rregs_en #(384,GATE) statereg_3 (state, down_out, eph1, reset|(op_switch_next&run)); 
+                    
+          //Created as a means to catch the state for use after a squeeze function.  
+          logic [383:0] saved_squeeze;
+          rregs_en #(384,GATE) hack_4 (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
+                 
 
-					assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
-					assign sqz_exception = ~sm_idle&((shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky));
-					
-					rmuxd4_im #(384) exceptionhandler (permin, 
-						initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
-						hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
-						sqz_exception                            , saved_squeeze,   //requires the previous state value since the last permute does not affect the state.  
-						state
-					);
-					                              
+          assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
+          assign sqz_exception = ~sm_idle&((shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky));
+          
+          rmuxd4_im #(384) exceptionhandler (permin, 
+            initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
+            hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
+            sqz_exception                            , saved_squeeze,   //requires the previous state value since the last permute does not affect the state.  
+            state
+          );
+                                        
          ///Adds the Cu value for functions, if applicable. Not applicable if the same function is called more than once in a row (shadow_state==sm_state).  
          //So the shadow state issue creates a problem if you immediately try to decrypt after encrypt or vice versa.  
          /*
@@ -244,8 +241,8 @@
           
   
           logic [383:0] abs_down_modifier, abs_keyed, abs_hash, abs_non, down_input;
-          logic [191:0] ex_rat;
-          logic[191:0] ex_dec;
+          logic [191:0] ex_rat, ex_dec;
+
           assign ex_dec  = {192{sm_dec}};
           assign ex_rat  = {128{sm_rat}}; 
 
@@ -264,42 +261,42 @@
                         384'h0
           ); 
               
-            //For one clock functions the state, subject to the exception handler, is applied to the down function.
-            //These are the "one clock functions"            
-           assign down_input =  one_clock_functions ? permin : permute_out;
+          //For one clock functions the state, subject to the exception handler, is applied to the down function.
+          //These are the "one clock functions"            
+         assign down_input =  one_clock_functions ? permin : permute_out;
 
 
-            //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
-            assign absorb_out = abs_down_modifier^down_input;
-            assign crypt_down = { textin_r^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
-            assign sqz_down[383:256] = {down_input[383:377], down_input[376]^(sm_sqz), down_input[375:256]}&~ex_rat;
-            assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~sm_sqz), down_input[247:0]};   
-                                                                                              
+        //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
+        assign absorb_out = abs_down_modifier^down_input;
+        assign crypt_down = { textin_r^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
+        assign sqz_down[383:256] = {down_input[383:377], down_input[376]^(sm_sqz), down_input[375:256]}&~ex_rat;
+        assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~sm_sqz), down_input[247:0]};   
+                                                                                          
 
-       rmuxdx4_im #(384) downsel   (down_out, 
-              
-               reset | sm_cyc                       ,state_cyclist,
-              ~reset & sm_abs | sm_non              , absorb_out,   
-              ~reset & sm_enc | sm_dec              , crypt_down,               
-              ~reset & sm_sqz | sm_rat | sm_sky     , sqz_down
+         rmuxdx4_im #(384) downsel   (down_out, 
+                
+                 reset | sm_cyc                       ,state_cyclist,
+                ~reset & sm_abs | sm_non              , absorb_out,   
+                ~reset & sm_enc | sm_dec              , crypt_down,               
+                ~reset & sm_sqz | sm_rat | sm_sky     , sqz_down
 
-        );                                                          
+          );                                                          
 
 
 
          //----------------------------------------------------------------
-				 //Selecting the output text. 
-         //----------------------------------------------------------------				 
-			
-          //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
+         //Selecting the output text. 
+         //----------------------------------------------------------------         
+      
+        //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
         rmuxd4_im #(192) txtut (  textout ,
             shadow_enc                      ,state[383:192],
             shadow_dec                      ,textin_r^permute_out[383:192],
             (shadow_sqz|shadow_sky)         ,{state[383:377], state[376]^shadow_sqz, state[375:256],{64{1'b0}}},
             '0
         );   
-				
-				rregs_en #(192, GATE) texttrial_9 (textout_r, reset? '0: textout, eph1, sm_idle|reset); 
+        
+        rregs_en #(192, GATE) texttrial_9 (textout_r, reset? '0: textout, eph1, sm_idle|reset); 
 
 
         endmodule: xoodyak_build   
