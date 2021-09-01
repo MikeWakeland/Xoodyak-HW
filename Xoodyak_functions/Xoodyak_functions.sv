@@ -23,10 +23,13 @@ Still need to:
 
       module xoodyak_build(
           input logic             eph1,
-          input logic             reset,         
+          input logic             reset,
+					
           input logic [351:0]     input_data, 
           input logic [4:0]       opmode,    
 
+
+					output logic 						ready, 
           output logic [191:0]    textout,
           output logic            textout_valid
           
@@ -42,22 +45,43 @@ Still need to:
                 //----------------------------------------------------------------                
           /*    
            Important information:
-     
+           >If an invalid function call has a valid option in Hash/keyed mode, it will process that command as a keyed command 
+							For example, if the hardware is in Hash mode, and opmode_r becomes 5'h03 (keyed absorb), Xoodyak will perform a hashed absorb.
+							If the function call decode is invalid, or has no equivalent call in the present hash/keyed mode, the state remains in idle.  
+					 >Hashed/Keyed mode can only be changed during a call to the Cyclist instantiation.
+					 >A Hashed/Keyed mode must be established before any other function calls are made.  Resets wipe both modes. 
+					 >Permute requires four clock cycles.  One clock in the idle state is required between function calls.  Thus, the start -> start time is 5 clocks.
+					 >Ratchet calls can only handle the 128' length call.  Theoretical maximum sequential function calls are unlimited, but may not have a purpose.  
+					 >Xoodyak is capable of other function calls after Squeeze(), and correctly handles whether the state is "up" or "down."  
            
+					 
            Xoodyak requires:
-            
+           > Synchronized function calls and data.  
+           >This build is capable of processing 192' multiples of plaintext and ciphertext.
+					 >Absorb data is taken in 352'/44byte increments.  The user is responsible for padding the input data.  
+					 >Nonce dada is taken in 128'/16byte increments.  The user is responsible for padding the input data.
+					 
+						
             Xoodyak produces:
+					>Ciphertext and plaintext in increments of 192'. No theoretical maximum of sequential function calls.
+					>Squeezes, tags, and keys in increments of 128'. No theoretical maximum of sequential function calls.
+					
+						
                  
            */ 
       
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //----------------------------------------------------------------
+						
+						
+						
+						
         logic                    sm_idle,  sm_cyc, sm_run, sm_idle_next, sm_cyc_next,  sm_non_next, op_switch_next,
                                  sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
                                  sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, sqz_more, initial_state, one_clock_functions, statechange, run_next, 
 															 	 shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,  												 
-																 meta_cyc;  											 
+																 meta_cyc, permute_run_next;  											 
         logic [4:0]              opmode_r; 
         parameter logic GATE = 1; 
         
@@ -124,18 +148,20 @@ Still need to:
           logic [2:0] perm_ctr,  perm_ctr_next;      
 
           parameter logic [2:0] PERM_INIT = 3'h3;   
-          assign op_switch_next = (perm_ctr == 3'h0) | one_clock_functions; 
-
+          
+					assign permute_run_next = ~(sm_idle_next|one_clock_functions);
+					assign op_switch_next = (perm_ctr == 3'h0) | one_clock_functions; 
           assign perm_ctr_next = perm_ctr - 1; 
                     
           rregs_en #(3,GATE) permc (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
-
+         
 
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
                 logic [191:0] textout_r; 
             assign textout_valid = ~reset&(|textout_r); 
+						assign ready = sm_idle_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  Instantiates the state.  
@@ -168,7 +194,7 @@ Still need to:
             //Permute Inputs 
             //----------------------------------------------------------------        
             
-        logic [383:0] permute_in, permout_advanced, absorb_out , nonce_out, state, permin_cd_added, permin, sqz_down, rat_state, down_out,crypt_down, permout_retarded;            
+        logic [383:0] permute_in, permute_out, absorb_out , nonce_out, state, permin_cd_added, permin, sqz_down, rat_state, down_out,crypt_down;            
         logic hash_abs_exception, sqz_exception;
  
 			 rregs_en #(384,GATE) statereg (state, down_out, eph1, reset|(op_switch_next&run)); 
@@ -180,7 +206,7 @@ Still need to:
 				       
 
         
-        assign hash_abs_exception =  sm_abs&hash_mode&shadow_abs&meta_cyc;
+        assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
         assign sqz_exception = ~sm_idle&((shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky));
 				
         rmuxd4_im #(384) exceptionhandler (permin, 
@@ -191,13 +217,13 @@ Still need to:
         );
         
 
-    rregs #(192) texttrial (textout_r, textout, eph1); 
+    rregs_en #(192, GATE) texttrial (textout_r, reset? '0: textout, eph1, sm_idle|reset); 
 
 
           //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
         rmuxd4_im #(192) txtut (  textout ,
             shadow_enc                      ,state[383:192],
-            shadow_dec                      ,textin_r^permout_retarded[383:192],
+            shadow_dec                      ,textin_r^permute_out[383:192],
             (shadow_sqz|shadow_sky)         ,{state[383:377], state[376]^shadow_sqz, state[375:256],{64{1'b0}}},
             '0
         );                              
@@ -230,11 +256,10 @@ Still need to:
           permute #(PERM_INIT, GATE) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
-              .run           (~(sm_idle|one_clock_functions)),
+              .run           (permute_run_next),
               .state_in      (permin_cd_added),
               .sbox_ctrl     (perm_ctr),
-              .state_out     (permout_advanced), //permout_advanced is the nonregistered output of the round.  This is necessary to allow the down function to compute on the same clock
-							.state_retarded (permout_retarded) //permout_retarded is the registered output.  It is necessary for certain functions (decrypt) based on the permute out, rather than the state. So the down() modifications can't exist.   
+              .state_out     (permute_out) //permute_out is the nonregistered output of the round.  This is necessary to allow the down function to compute on the same clock
           );    
               
             
@@ -243,46 +268,41 @@ Still need to:
             //Permute post processing --- Modifies the permute output for recyclying through the down() function and associated logic.             
             //----------------------------------------------------------------          
           
-          //This performs the absorb manipulation required on the permute output:
-          //For DOWN(extra_data,8'h03)
-       
- 
-
-          // perm_out ^ (Xi||8'h01||'00(extended)||Cd)  Cd is 8'h03.  
-    
   
-        logic [383:0] abs_down_modifier, abs_keyed, abs_hash, abs_non, down_input;
-        logic [191:0] ex_rat;
-        logic[191:0] ex_dec;
-        assign ex_dec = {192{sm_dec}};
+					logic [383:0] abs_down_modifier, abs_keyed, abs_hash, abs_non, down_input;
+					logic [191:0] ex_rat;
+					logic[191:0] ex_dec;
+					assign ex_dec  = {192{sm_dec}};
+					assign ex_rat  = {128{sm_rat}}; 
 
-        //Calculates the absorb input, this is the part that is XOR'd with the state during an absorb.  
-        assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
-        assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
-        assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h1};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
-				                                                        //Also the software doesn't recognize the down() function
-        
-        
-        //To replace the absorb_out rats nest.  
-        rmuxd4_im #(384) absot (abs_down_modifier,
-                      sm_non                 ,abs_non,
-                      sm_abs&keyed_mode       ,abs_keyed, 
-                      sm_abs&hash_mode       ,abs_hash,
-                      384'h0
-        ); 
-         //For certain functions the saved state is XOR'd instead of the permute from the previous round.
-         //This is required when an up() function is not performed on the state, such as after a sqz or sky
-         assign down_input =  (sm_cyc | ((~sm_sqz&shadow_sqz)|(~sm_sky&shadow_sky))) ? permin : permout_advanced;
-         
-        //////////////////////
-       assign ex_rat     = {128{sm_rat}}; 
+					//Calculates results of the Down() function based on the function called; nonce, absorb(keyed), or absorb(hash) respectively. 
+					assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
+					assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
+					assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h1};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
+																																	//Also the software doesn't recognize the down() function
+					
+					
+					//Selects which form of Down() modification is selected to be applied to the state.   
+					rmuxd4_im #(384) absot (abs_down_modifier,
+												sm_non                 ,abs_non,
+												sm_abs&keyed_mode      ,abs_keyed, 
+												sm_abs&hash_mode       ,abs_hash,
+												384'h0
+					); 
+              
+						//For one clock functions the state, subject to the exception handler, is applied to the down function.
+            //These are the "one clock functions"						
+					 assign down_input =  one_clock_functions ? permin : permute_out;
 
-          //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
-          assign absorb_out = abs_down_modifier^down_input;
-          assign crypt_down = { textin_r^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
-          assign sqz_down[383:256] = {down_input[383:377], down_input[376]^(sm_sqz), down_input[375:256]}&~ex_rat;
-          assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~sm_sqz), down_input[247:0]};   
-                                                                                            
+					//////////////////////
+					
+
+						//Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
+						assign absorb_out = abs_down_modifier^down_input;
+						assign crypt_down = { textin_r^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
+						assign sqz_down[383:256] = {down_input[383:377], down_input[376]^(sm_sqz), down_input[375:256]}&~ex_rat;
+						assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~sm_sqz), down_input[247:0]};   
+																																															
 
        rmuxdx4_im #(384) downsel   (down_out, 
               
@@ -312,8 +332,7 @@ Still need to:
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
           input logic  [2:0]   sbox_ctrl, 
           
-          output logic [383:0] state_out,
-					output logic [383:0] state_retarded
+          output logic [383:0] state_out
 
       );
           //----------------------------------------------------------------
@@ -419,25 +438,7 @@ Still need to:
                                 state_interm[327:320],state_interm[335:328],state_interm[343:336],state_interm[351:344],
                                 state_interm[295:288],state_interm[303:296],state_interm[311:304],state_interm[319:312],
                                 state_interm[263:256],state_interm[271:264],state_interm[279:272],state_interm[287:280]
-                              };
-     
-		       assign state_retarded = { state_recycle[103:96] ,state_recycle[111:104],state_recycle[119:112],state_recycle[127:120],
-                                state_recycle[71:64]  ,state_recycle[79:72]  ,state_recycle[87:80]  ,state_recycle[95:88],
-                                state_recycle[39:32]  ,state_recycle[47:40]  ,state_recycle[55:48]  ,state_recycle[63:56],
-                                state_recycle[7:0]    ,state_recycle[15:8]   ,state_recycle[23:16]  ,state_recycle[31:24],                          
-                                
-                                state_recycle[231:224],state_recycle[239:232],state_recycle[247:240],state_recycle[255:248],
-                                state_recycle[199:192],state_recycle[207:200],state_recycle[215:208],state_recycle[223:216],
-                                state_recycle[167:160],state_recycle[175:168],state_recycle[183:176],state_recycle[191:184],
-                                state_recycle[135:128],state_recycle[143:136],state_recycle[151:144],state_recycle[159:152],
-                                
-                                state_recycle[359:352],state_recycle[367:360],state_recycle[375:368], state_recycle[383:376],
-                                state_recycle[327:320],state_recycle[335:328],state_recycle[343:336],state_recycle[351:344],
-                                state_recycle[295:288],state_recycle[303:296],state_recycle[311:304],state_recycle[319:312],
-                                state_recycle[263:256],state_recycle[271:264],state_recycle[279:272],state_recycle[287:280]
-                              };
-		 
-		 
+                              }; 
 		 
 		 
        endmodule: permute
