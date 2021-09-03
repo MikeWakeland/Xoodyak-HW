@@ -8,7 +8,7 @@
           input logic [3:0]       opmode,    
 
 
-          output logic             ready, 
+          output logic            ready, 
           output logic [191:0]    textout_r,
           output logic            textout_valid
           
@@ -57,27 +57,27 @@
            Example sequence of funtion calls:
   
            Example 1-
-           clk (decimal)   function      
-           0               Cyclist (keyed) <- Cyclist calls create two clock delays.
-           2               Nonce 
-           7               Absorb
-           12              Encrypt
-           17               Squeeze
-           22               Absorb          <- Two clock delay because of the previous function terminating in an "UP" state.
-           24               Encrypt    
-           29               Squeeze (key) 
+           clk (decimal)       function      
+           0                   Cyclist (keyed) <- Cyclist calls create two clock delays.
+           2                   Nonce 
+           7                   Absorb
+           12                  Encrypt
+           17                  Squeeze
+           22                  Absorb          <- Two clock delay because of the previous function terminating in an "UP" state.
+           24                  Encrypt    
+           29                  Squeeze (key) 
            
            Example 2-
-           clk (decimal)   function 
-           0               Cyclist (hash)  <- Cyclist calls create two clock delays.
-           2               Absorb           <- Two clock delay because of the previous function terminating in an "UP" state.
-           4               Absorb  
-           9                Absorb
-           14               Squeeze
-           19               Squeeze
-           24               Squeeze
-           29               Cyclist (keyed)  <- Cyclist calls create two clock delays.
-           31               Nonce
+           clk (decimal)       function 
+           0                   Cyclist (hash)  <- Cyclist calls create two clock delays.
+           2                   Absorb           <- Two clock delay because of the previous function terminating in an "UP" state.
+           4                   Absorb  
+           9                   Absorb
+           14                  Squeeze
+           19                  Squeeze
+           24                  Squeeze
+           29                  Cyclist (keyed)  <- Cyclist calls create two clock delays.
+           31                  Nonce
            
 
           
@@ -172,7 +172,7 @@
         
           rregs_en #(1,MUX) shdwcyc_3      (shadow_cyc , ~reset&sm_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
           rregs_en #(1,MUX) shdwnon_9      (shadow_non , ~reset&sm_non      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,MUX) shdwabs_5h_8k (shadow_abs , ~reset&sm_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,MUX) shdwabs_5h_8k  (shadow_abs , ~reset&sm_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
           rregs_en #(1,MUX) shdwenc_9      (shadow_enc , ~reset&sm_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
           rregs_en #(1,MUX) shdwdec_9      (shadow_dec , ~reset&sm_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
           rregs_en #(1,MUX) shdwsqz_9      (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
@@ -203,7 +203,7 @@
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
-          rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout, eph1, sm_idle_next|reset);  
+          rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, sm_idle_next|reset);  
 
           rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, sm_idle_next); 
           assign ready = sm_idle_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
@@ -347,9 +347,9 @@
          //----------------------------------------------------------------         
       
         //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
-           logic [191:0] textout;
+           logic [191:0] textout_sel;
         
-           rmuxd4_im #(192) txtut (  textout ,
+           rmuxd4_im #(192) txtut (  textout_sel ,
               sm_enc                      ,down_out[383:192],
               sm_dec                      ,textin_r^permute_out[383:192],
               (sm_sqz|sm_sky)             ,{down_out[383:377], down_out[376]^sm_sqz, down_out[375:256],{64{1'b0}}},
