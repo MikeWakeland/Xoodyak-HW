@@ -9,7 +9,7 @@
 
 
           output logic             ready, 
-          output logic [191:0]    textout,
+          output logic [191:0]    textout_r,
           output logic            textout_valid
           
         );
@@ -78,7 +78,7 @@
                                    shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
                                    meta_cyc, permute_run_next;                         
           logic [4:0]              opmode_r; 
-          parameter logic GATE = 1; 
+          parameter logic MUX = 1; 
           
           
            assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
@@ -111,18 +111,18 @@
           rregs #(1) smsk_4 (sm_sky,    ~reset & sm_sky_next,    eph1);       
       
         
-          rregs_en #(1,GATE) shdwcyc_3      (shadow_cyc , ~reset&sm_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
-          rregs_en #(1,GATE) shdwnon_9      (shadow_non , ~reset&sm_non      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) shdwabs_5h_8k (shadow_abs , ~reset&sm_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) shdwenc_9      (shadow_enc , ~reset&sm_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
-          rregs_en #(1,GATE) shdwdec_9      (shadow_dec , ~reset&sm_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
-          rregs_en #(1,GATE) shdwsqz_9      (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) shdwsky_9      (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
-          rregs_en #(1,GATE) shdwrat_9      (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
+          rregs_en #(1,MUX) shdwcyc_3      (shadow_cyc , ~reset&sm_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
+          rregs_en #(1,MUX) shdwnon_9      (shadow_non , ~reset&sm_non      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,MUX) shdwabs_5h_8k (shadow_abs , ~reset&sm_abs      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,MUX) shdwenc_9      (shadow_enc , ~reset&sm_enc      , eph1,  reset|(op_switch_next&~sm_idle));     
+          rregs_en #(1,MUX) shdwdec_9      (shadow_dec , ~reset&sm_dec      , eph1,  reset|(op_switch_next&~sm_idle));            
+          rregs_en #(1,MUX) shdwsqz_9      (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,MUX) shdwsky_9      (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
+          rregs_en #(1,MUX) shdwrat_9      (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
           
             
           //I created the meta state to track function calls before the previous one, however only the meta_cyc state was used.  So I deleted the others.    
-          rregs_en #(1,GATE) metacyc_5h_8k (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
+          rregs_en #(1,MUX) metacyc_5h_8k (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
 
          assign statechange = sm_idle&(sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_sky_next | sm_rat_next); //sets the perm counter to three whenever there's a state change on the next clock. 
    
@@ -138,14 +138,15 @@
           assign op_switch_next = (perm_ctr == 3'h0) | one_clock_functions; 
           assign perm_ctr_next = perm_ctr - 1; 
                     
-          rregs_en #(3,GATE) permc_4 (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
+          rregs_en #(3,MUX) permc_4 (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
          
 
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
-                logic [191:0] textout_r; 
-            assign textout_valid = ~reset&(|textout_r); 
+            rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout, eph1, sm_idle_next|reset);  
+
+            rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, sm_idle_next); 
             assign ready = sm_idle_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
             //----------------------------------------------------------------
@@ -182,11 +183,11 @@
           logic [383:0] permute_in, permute_out, absorb_out , state, permin_cd_added, permin, sqz_down, down_out,crypt_down;            
           logic hash_abs_exception, sqz_exception;
    
-          rregs_en #(384,GATE) statereg_3 (state, down_out, eph1, reset|(op_switch_next&run)); 
+          rregs_en #(384,MUX) statereg_3 (state, down_out, eph1, reset|(op_switch_next&run)); 
                     
           //Created as a means to catch the state for use after a squeeze function.  
           logic [383:0] saved_squeeze;
-          rregs_en #(384,GATE) hack_4 (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
+          rregs_en #(384,MUX) hack_4 (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
                  
 
           assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
@@ -223,7 +224,7 @@
             //----------------------------------------------------------------                
           
 
-          permute #(PERM_INIT, GATE) xoopermute(
+          permute #(PERM_INIT, MUX) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
               .run           (permute_run_next),
@@ -249,7 +250,7 @@
           //Calculates results of the Down() function based on the function called; nonce, absorb(keyed), or absorb(hash) respectively. 
           assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
           assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
-          assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h1};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
+          assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h0};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
                                                                   //Also the software doesn't recognize the down() function
           
           
@@ -282,21 +283,19 @@
 
           );                                                          
 
-
-
          //----------------------------------------------------------------
          //Selecting the output text. 
          //----------------------------------------------------------------         
       
         //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
-        rmuxd4_im #(192) txtut (  textout ,
-            shadow_enc                      ,state[383:192],
-            shadow_dec                      ,textin_r^permute_out[383:192],
-            (shadow_sqz|shadow_sky)         ,{state[383:377], state[376]^shadow_sqz, state[375:256],{64{1'b0}}},
+        logic [191:0] textout;
+				
+				rmuxd4_im #(192) txtut (  textout ,
+            sm_enc                      ,down_out[383:192],
+            sm_dec                      ,textin_r^permute_out[383:192],
+            (sm_sqz|sm_sky)             ,{down_out[383:377], down_out[376]^sm_sqz, down_out[375:256],{64{1'b0}}},
             '0
         );   
-        
-        rregs_en #(192, GATE) texttrial_9 (textout_r, reset? '0: textout, eph1, sm_idle|reset); 
 
 
         endmodule: xoodyak_build   
@@ -308,7 +307,7 @@
  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
  
      
-      module permute #(parameter PERM_INIT=3, parameter GATE = 1)( 
+      module permute #(parameter PERM_INIT=3, parameter MUX = 1)( 
       
           input logic          eph1,
           input logic          reset, 
@@ -406,7 +405,7 @@
 
       );
       
-      rregs_en #(384,GATE) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
+      rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
     
 
       assign state_out = {      state_interm[103:96] ,state_interm[111:104],state_interm[119:112],state_interm[127:120],
