@@ -5,7 +5,7 @@
           input logic             reset,
           
           input logic [351:0]     input_data, 
-          input logic [4:0]       opmode,    
+          input logic [3:0]       opmode,    
 
 
           output logic             ready, 
@@ -20,65 +20,69 @@
                 //Technical briefing on XOODYAK
                 //----------------------------------------------------------------                
           /*    
-					 Timing: 
-					 Xoodyak completes functions in either one clock, or four clocks. 
-					 There is a minimum of one clock spent in the idle state between function calls. This means that clock delays from data supply to data supply 
-					 are two, or five clocks depending on the function.
-					 
-					 Any function that calls the permute module completes in four clocks. Not every function call requires a permute.  Functions that end with an 
-					 "UP" state as defined by "Xoodyak - A Lightweight Encryption Scheme" cause the next function called to not use permute. Multiple calls to the 
-					 same function do not trigger this case.  For example, generating a 256' squeeze requires two sequential calls to squeeze.  Each call requires
-					 a permute, and two calls are required, for a total of ten clocks to generate the entire string.  A following Absorb() or other function will 
-					 not require a permute, and as such there is a 1 clock execution + 1 clock idle = 2 clock delay until the next set of data and function calls
-					 can be supplied.  
-					 
-					 functions which never require permute (two clock delays):
-					 (FUNCTION)       - (OPCODE)
-						Cyclist (keyed) -  5'h01
-						Cyclist (hash)  -  5'h11
+           Timing: 
+           Xoodyak completes functions in either one clock, or four clocks. 
+           There is a minimum of one clock spent in the idle state between function calls. This means that clock delays from data supply to data supply 
+           are two, or five clocks depending on the function.
+           
+           Any function that calls the permute module completes in four clocks. Not every function call requires a permute.  Functions that end with an 
+           "UP" state as defined by "Xoodyak - A Lightweight Encryption Scheme" cause the next function called to not use permute. Multiple calls to the 
+           same function do not trigger this case.  For example, generating a 256' squeeze requires two sequential calls to squeeze.  Each call requires
+           a permute, and two calls are required, for a total of ten clocks to generate the entire string.  A following Absorb() or other function will 
+           not require a permute, and as such there is a 1 clock execution + 1 clock idle = 2 clock delay until the next set of data and function calls
+           can be supplied.  
+           
+           functions which never require permute (two clock delays):
+           (FUNCTION)       - (OPCODE)
+            Cyclist (keyed) -  4'h1
+            Cyclist (hash)  -  4'h9
  
            functions which terminate in an "UP" state (the next non identical function call is a two clock delay):
-      			(FUNCTION)      - (OPCODE)		 
-            Cyclist (hash)  -  5'h11
-						Squeeze         -  5'h06, 5'h16
-						Squeeze Key     -  5'h08
-						
-					 functions which require permute (five clock delays):
-					  (FUNCTION)      - (OPCODE)
-						All others      - Any valid opcode not listed above
-					 
-					
-					 Example sequence of funtion calls:
-	
-					 Example 1-
-					 clk (decimal)   function      
-					 0               Cyclist (keyed) <- Cyclist calls create two clock delays.
-					 2							 Nonce 
-					 7							 Absorb
-					 12              Encrypt
-					 17						   Squeeze
-					 22							 Absorb   			 <- Two clock delay because of the previous function terminating in an "UP" state.
-					 24							 Encrypt    
-					 29							 Squeeze (key) 
-					 
-					 Example 2-
-					 clk (decimal)   function 
-					 0							 Cyclist (hash)  <- Cyclist calls create two clock delays.
-					 2							 Absorb    			 <- Two clock delay because of the previous function terminating in an "UP" state.
-					 4               Absorb  
-					 9 							 Absorb
-					 14							 Squeeze
-					 19							 Squeeze
-					 24							 Squeeze
-					 29							 Cyclist (keyed)  <- Cyclist calls create two clock delays.
-					 31							 Nonce
-					 
+            (FUNCTION)      - (OPCODE)     
+            Cyclist (hash)  -  4'h9
+            Squeeze         -  4'h6
+            Squeeze Key     -  4'h8
+            
+           functions which require permute (five clock delays), unless they began in an "UP" state:
+            (FUNCTION)      - (OPCODE)
+            Nonce           -  4'h2
+            Absorb          -  4'h3
+            Encrypt         -  4'h4
+            Decrypt         -  4'h5
+            Squeeze         -  4'h6
+            Ratchet         -  4'h7
+            Squeeze (key)   -  4'h8
+           
+          
+           Example sequence of funtion calls:
+  
+           Example 1-
+           clk (decimal)   function      
+           0               Cyclist (keyed) <- Cyclist calls create two clock delays.
+           2               Nonce 
+           7               Absorb
+           12              Encrypt
+           17               Squeeze
+           22               Absorb          <- Two clock delay because of the previous function terminating in an "UP" state.
+           24               Encrypt    
+           29               Squeeze (key) 
+           
+           Example 2-
+           clk (decimal)   function 
+           0               Cyclist (hash)  <- Cyclist calls create two clock delays.
+           2               Absorb           <- Two clock delay because of the previous function terminating in an "UP" state.
+           4               Absorb  
+           9                Absorb
+           14               Squeeze
+           19               Squeeze
+           24               Squeeze
+           29               Cyclist (keyed)  <- Cyclist calls create two clock delays.
+           31               Nonce
+           
 
-					
+          
            Important information:
-           >If an invalid function call has a valid option in Hash/keyed mode, it will process that command as a keyed command 
-              For example, if the hardware is in Hash mode, and opmode_r becomes 5'h03 (keyed absorb), Xoodyak will perform a hashed absorb.
-              If the function call decode is invalid, or has no equivalent call in the present hash/keyed mode, the state remains in idle.  
+           >If the function call decode is invalid the state remains in idle.  
            >Hashed/Keyed mode can only be changed during a call to the Cyclist instantiation.
            >A Hashed/Keyed mode must be established before any other function calls are made.  Resets wipe both modes.
            >The user can call any other sequence of functions, even if they are not meaningful.  cyclist() -> encrypt() -> decyrpt() is a valid, if illogical series of function calls.
@@ -141,11 +145,11 @@
            assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky);
           assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz)| (~sm_sky&shadow_sky) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) ;
           
-          rregs_en #(1) hashmd_1 (hash_mode,  ~reset &  opmode_r[4], eph1, sm_cyc_next|reset);
-          rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~opmode_r[4], eph1, sm_cyc_next|reset); 
+          rregs_en #(1) hashmd_1 (hash_mode,  ~reset & opmode_r[3] & opmode[0] , eph1, sm_cyc_next|reset);
+          rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~(opmode_r[3]&opmode[0]), eph1, sm_cyc_next|reset); 
 
           assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
-          assign sm_cyc_next       = (sm_idle &  (opmode_r[3:0] == 4'b0001)) ;        
+          assign sm_cyc_next       = (sm_idle &  ((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)) ;        
           assign sm_non_next       = ((sm_idle & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
           assign sm_abs_next       = ((sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
           assign sm_enc_next       = ((sm_idle & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
@@ -199,10 +203,10 @@
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
-            rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout, eph1, sm_idle_next|reset);  
+          rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout, eph1, sm_idle_next|reset);  
 
-            rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, sm_idle_next); 
-            assign ready = sm_idle_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
+          rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, sm_idle_next); 
+          assign ready = sm_idle_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  Instantiates the state.  
@@ -271,7 +275,7 @@
          assign  cu[4]   =  (sm_rat_next|sm_rat);
          assign  cu[3:0] =   4'h0; 
      
-        assign permin_cd_added =  {permin[383:8], permin[7:0]^cu};    
+         assign permin_cd_added =  {permin[383:8], permin[7:0]^cu};    
 
         
             //----------------------------------------------------------------
@@ -305,8 +309,8 @@
           //Calculates results of the Down() function based on the function called; nonce, absorb(keyed), or absorb(hash) respectively. 
           assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
           assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
-          assign abs_hash =  {absdata_r[351:224], 8'h1, 248'h0};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
-                                                                  //Also the software doesn't recognize the down() function
+          assign abs_hash =  {absdata_r[351:224], 8'h1, 247'h0, ~shadow_abs};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
+                                                                               //Also the software doesn't recognize the down() function
           
           
           //Selects which form of Down() modification is selected to be applied to the state.   
@@ -319,38 +323,38 @@
               
           //For one clock functions the state, subject to the exception handler, is applied to the down function.
           //These are the "one clock functions"            
-         assign down_input =  one_clock_functions ? permin : permute_out;
+          assign down_input =  one_clock_functions ? permin : permute_out;
 
 
-        //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
-        assign absorb_out = abs_down_modifier^down_input;
-        assign crypt_down = { textin_r^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
-        assign sqz_down[383:256] = {down_input[383:377], down_input[376]^(sm_sqz), down_input[375:256]}&~ex_rat;
-        assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~sm_sqz), down_input[247:0]};   
-                                                                                          
+          //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
+          assign absorb_out = abs_down_modifier^down_input;
+          assign crypt_down = { textin_r^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
+          assign sqz_down[383:256] = {down_input[383:377], down_input[376]^(sm_sqz), down_input[375:256]}&~ex_rat;
+          assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~sm_sqz), down_input[247:0]};   
+                                                                                            
 
-         rmuxdx4_im #(384) downsel   (down_out, 
+          rmuxdx4_im #(384) downsel   (down_out, 
                 
                  reset | sm_cyc                       ,state_cyclist,
                 ~reset & sm_abs | sm_non              , absorb_out,   
                 ~reset & sm_enc | sm_dec              , crypt_down,               
                 ~reset & sm_sqz | sm_rat | sm_sky     , sqz_down
 
-          );                                                          
+           );                                                          
 
          //----------------------------------------------------------------
          //Selecting the output text. 
          //----------------------------------------------------------------         
       
         //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
-        logic [191:0] textout;
-				
-				rmuxd4_im #(192) txtut (  textout ,
-            sm_enc                      ,down_out[383:192],
-            sm_dec                      ,textin_r^permute_out[383:192],
-            (sm_sqz|sm_sky)             ,{down_out[383:377], down_out[376]^sm_sqz, down_out[375:256],{64{1'b0}}},
-            '0
-        );   
+           logic [191:0] textout;
+        
+           rmuxd4_im #(192) txtut (  textout ,
+              sm_enc                      ,down_out[383:192],
+              sm_dec                      ,textin_r^permute_out[383:192],
+              (sm_sqz|sm_sky)             ,{down_out[383:377], down_out[376]^sm_sqz, down_out[375:256],{64{1'b0}}},
+              '0
+           );   
 
 
         endmodule: xoodyak_build   
