@@ -20,6 +20,61 @@
                 //Technical briefing on XOODYAK
                 //----------------------------------------------------------------                
           /*    
+					 Timing: 
+					 Xoodyak completes functions in either one clock, or four clocks. 
+					 There is a minimum of one clock spent in the idle state between function calls. This means that clock delays from data supply to data supply 
+					 are two, or five clocks depending on the function.
+					 
+					 Any function that calls the permute module completes in four clocks. Not every function call requires a permute.  Functions that end with an 
+					 "UP" state as defined by "Xoodyak - A Lightweight Encryption Scheme" cause the next function called to not use permute. Multiple calls to the 
+					 same function do not trigger this case.  For example, generating a 256' squeeze requires two sequential calls to squeeze.  Each call requires
+					 a permute, and two calls are required, for a total of ten clocks to generate the entire string.  A following Absorb() or other function will 
+					 not require a permute, and as such there is a 1 clock execution + 1 clock idle = 2 clock delay until the next set of data and function calls
+					 can be supplied.  
+					 
+					 functions which never require permute (two clock delays):
+					 (FUNCTION)       - (OPCODE)
+						Cyclist (keyed) -  5'h01
+						Cyclist (hash)  -  5'h11
+ 
+           functions which terminate in an "UP" state (the next non identical function call is a two clock delay):
+      			(FUNCTION)      - (OPCODE)		 
+            Cyclist (hash)  -  5'h11
+						Squeeze         -  5'h06, 5'h16
+						Squeeze Key     -  5'h08
+						
+					 functions which require permute (five clock delays):
+					  (FUNCTION)      - (OPCODE)
+						All others      - Any valid opcode not listed above
+					 
+					
+					 Example sequence of funtion calls:
+	
+					 Example 1-
+					 clk (decimal)   function      
+					 0               Cyclist (keyed) <- Cyclist calls create two clock delays.
+					 2							 Nonce 
+					 7							 Absorb
+					 12              Encrypt
+					 17						   Squeeze
+					 22							 Absorb   			 <- Two clock delay because of the previous function terminating in an "UP" state.
+					 24							 Encrypt    
+					 29							 Squeeze (key) 
+					 
+					 Example 2-
+					 clk (decimal)   function 
+					 0							 Cyclist (hash)  <- Cyclist calls create two clock delays.
+					 2							 Absorb    			 <- Two clock delay because of the previous function terminating in an "UP" state.
+					 4               Absorb  
+					 9 							 Absorb
+					 14							 Squeeze
+					 19							 Squeeze
+					 24							 Squeeze
+					 29							 Cyclist (keyed)  <- Cyclist calls create two clock delays.
+					 31							 Nonce
+					 
+
+					
            Important information:
            >If an invalid function call has a valid option in Hash/keyed mode, it will process that command as a keyed command 
               For example, if the hardware is in Hash mode, and opmode_r becomes 5'h03 (keyed absorb), Xoodyak will perform a hashed absorb.
