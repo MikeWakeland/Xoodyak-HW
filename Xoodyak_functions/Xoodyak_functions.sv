@@ -204,6 +204,7 @@
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
+          logic [191:0] textout_sel;									 
           rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, sm_idle_next|reset);  
 
           rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, sm_idle_next); 
@@ -348,7 +349,6 @@
          //----------------------------------------------------------------         
       
         //This mux selects the output text depending on the previous function call.  The outputs are zeros unless the function generates a real output. 
-           logic [191:0] textout_sel;
         
            rmuxd4_im #(192) txtut (  textout_sel ,
               sm_enc                      ,down_out[383:192],
