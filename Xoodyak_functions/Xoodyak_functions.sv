@@ -21,6 +21,7 @@
                 //----------------------------------------------------------------                
           /*    
            Timing: 
+					 Xoodyak accepts inputs on the positive edge after ready is 1.    
            Xoodyak completes functions in either one clock, or four clocks. 
            There is a minimum of one clock spent in the idle state between function calls. This means that clock delays from data supply to data supply 
            are two, or five clocks depending on the function.
