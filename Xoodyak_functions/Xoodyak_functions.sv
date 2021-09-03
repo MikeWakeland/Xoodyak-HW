@@ -148,8 +148,8 @@
           rregs_en #(1) hashmd_1 (hash_mode,  ~reset & opmode_r[3] & opmode[0] , eph1, sm_cyc_next|reset);
           rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~(opmode_r[3]&opmode[0]), eph1, sm_cyc_next|reset); 
 
-          assign sm_idle_next      = (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
-          assign sm_cyc_next       = (sm_idle &  ((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)) ;        
+          assign sm_idle_next      =  (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
+          assign sm_cyc_next       =  (sm_idle &((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
           assign sm_non_next       = ((sm_idle & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
           assign sm_abs_next       = ((sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
           assign sm_enc_next       = ((sm_idle & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
