@@ -137,7 +137,7 @@
                                    sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, initial_state, one_clock_functions, statechange, run_next, 
                                    shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
                                    meta_cyc, permute_run_next;                         
-          logic [4:0]              opmode_r; 
+          logic [3:0]              opmode_r; 
           parameter logic MUX = 1; 
           
           
@@ -223,7 +223,7 @@
 
 
           rregs_en #(352) idata_1 (input_data_r,         input_data, eph1, sm_idle_next|reset);    
-          rregs_en #(5)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|initial_state|reset);
+          rregs_en #(4)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|initial_state|reset);
 
           assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
