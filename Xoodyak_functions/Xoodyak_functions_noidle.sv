@@ -21,31 +21,30 @@
                 //----------------------------------------------------------------                
           /*    
            Timing: 
-					 Xoodyak accepts inputs on the positive edge after ready is 1.
-					 
- 	         If data is supplied on clock N, then the function call is complete on either clock N+3 or N+6, depending on the call.  
-					 If the function call generates output text, it is visible on the same clock that the function is complete.  For streaming 
-					 function calls, supply the next opcode and data on clock N+2 or N+5 respectively. 
+					 Xoodyak accepts inputs on the positive edge after ready is 1.    
+           Xoodyak completes functions in either one clock, or four clocks. 
+           There is a minimum of one clock spent in the idle state between function calls. This means that clock delays from data supply to data supply 
+           are two, or five clocks depending on the function.
            
-           Any function that calls the permute module completes in six clocks. Not every function call requires a permute.  Functions that end with an 
+           Any function that calls the permute module completes in four clocks. Not every function call requires a permute.  Functions that end with an 
            "UP" state as defined by "Xoodyak - A Lightweight Encryption Scheme" cause the next function called to not use permute. Multiple calls to the 
            same function do not trigger this case.  For example, generating a 256' squeeze requires two sequential calls to squeeze.  Each call requires
-           a permute, and two calls are required, for a total of eleven clocks to generate the entire string if properly staggered.  A following Absorb()
-					 or other function will not require a permute. The Absorb() function call will be complete three clocks after supply, or two clocks after the
-					 squeeze string is generated. 
+           a permute, and two calls are required, for a total of ten clocks to generate the entire string.  A following Absorb() or other function will 
+           not require a permute, and as such there is a 1 clock execution + 1 clock idle = 2 clock delay until the next set of data and function calls
+           can be supplied.  
            
-           functions which never require permute (two clock stream delays):
+           functions which never require permute (two clock delays):
            (FUNCTION)       - (OPCODE)
             Cyclist (keyed) -  4'h1
             Cyclist (hash)  -  4'h9
  
-           functions which terminate in an "UP" state (the next non identical function call is a two clock stream delay):
+           functions which terminate in an "UP" state (the next non identical function call is a two clock delay):
             (FUNCTION)      - (OPCODE)     
             Cyclist (hash)  -  4'h9
             Squeeze         -  4'h6
             Squeeze Key     -  4'h8
             
-           functions which require permute (five clock stream delays), unless they began in an "UP" state:
+           functions which require permute (five clock delays), unless they began in an "UP" state:
             (FUNCTION)      - (OPCODE)
             Nonce           -  4'h2
             Absorb          -  4'h3
@@ -150,15 +149,15 @@
           rregs_en #(1) hashmd_1 (hash_mode,  ~reset & opmode_r[3] & opmode[0] , eph1, sm_cyc_next|reset);
           rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~(opmode_r[3]&opmode[0]), eph1, sm_cyc_next|reset); 
 
-          assign sm_idle_next      =  (sm_idle & (~run_next) | (op_switch_next & run) | sm_cyc);
-          assign sm_cyc_next       =  (sm_idle &((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
-          assign sm_non_next       = ((sm_idle & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
-          assign sm_abs_next       = ((sm_idle & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
-          assign sm_enc_next       = ((sm_idle & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
-          assign sm_dec_next       = ((sm_idle & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
-          assign sm_sqz_next       = ((sm_idle & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
-          assign sm_rat_next       = ((sm_idle & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
-          assign sm_sky_next       = ((sm_idle & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
+          assign sm_idle_next      =  ( (~run_next) | (op_switch_next & run) | sm_cyc);
+          assign sm_cyc_next       =  (((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
+          assign sm_non_next       = (( (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
+          assign sm_abs_next       = (( (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
+          assign sm_enc_next       = (( (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
+          assign sm_dec_next       = (( (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
+          assign sm_sqz_next       = (( (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
+          assign sm_rat_next       = (( (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
+          assign sm_sky_next       = (( (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
                    
                
           rregs #(1) smir_2 (sm_idle,    reset | sm_idle_next,   eph1);
@@ -206,10 +205,10 @@
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
           logic [191:0] textout_sel;									 
-          rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, sm_idle_next|reset);  
+          rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, op_switch_next|reset);  
 
-          rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, sm_idle_next); 
-          assign ready = sm_idle_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
+          rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, op_switch_next); 
+          assign ready = op_switch_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  Instantiates the state.  
@@ -223,8 +222,8 @@
         
 
 
-          rregs_en #(352) idata_1 (input_data_r,         input_data, eph1, sm_idle_next|reset);    
-          rregs_en #(4)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|initial_state|reset);
+          rregs_en #(352) idata_1 (input_data_r,         input_data, eph1, op_switch_next|sm_idle_next|reset);    
+          rregs_en #(4)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|op_switch_next|initial_state|reset);
 
           assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           
