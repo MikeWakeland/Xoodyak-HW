@@ -143,22 +143,23 @@
           
            assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
           assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
-           assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky);
+           assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky|sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat);
           assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz)| (~sm_sky&shadow_sky) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) ;
           
           rregs_en #(1) hashmd_1 (hash_mode,  ~reset & opmode_r[3] & opmode[0] , eph1, sm_cyc_next|reset);
           rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~(opmode_r[3]&opmode[0]), eph1, sm_cyc_next|reset); 
 
-          assign sm_idle_next      =  ( (~run_next) | (op_switch_next & run) | sm_cyc);
-          assign sm_cyc_next       =  (((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
-          assign sm_non_next       = (( (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
-          assign sm_abs_next       = (( (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
-          assign sm_enc_next       = (( (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
-          assign sm_dec_next       = (( (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
-          assign sm_sqz_next       = (( (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
-          assign sm_rat_next       = (( (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
-          assign sm_sky_next       = (( (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
-                   
+          assign sm_idle_next      =  ( (~run_next));
+          assign sm_cyc_next       =  ((sm_idle | op_switch_next | one_clock_functions) &((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
+          assign sm_non_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
+          assign sm_abs_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
+          assign sm_enc_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
+          assign sm_dec_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
+          assign sm_sqz_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
+          assign sm_rat_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
+          assign sm_sky_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
+
+ 
                
           rregs #(1) smir_2 (sm_idle,    reset | sm_idle_next,   eph1);
           rregs #(1) smsr_2 (sm_cyc,    ~reset & sm_cyc_next,    eph1);

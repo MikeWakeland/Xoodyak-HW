@@ -13,39 +13,36 @@
           output logic            textout_valid
           
         );
-        
-        //Parameter definitions are on line 128 and 129.
 
                 //----------------------------------------------------------------
                 //Technical briefing on XOODYAK
                 //----------------------------------------------------------------                
           /*    
            Timing: 
-					 Xoodyak accepts inputs on the positive edge after ready is 1.
+					 Imputs are sampled on the positive edge after ready is 1.
 					 
- 	         If data is supplied on clock N, then the function call is complete on either clock N+3 or N+6, depending on the call.  
-					 If the function call generates output text, it is visible on the same clock that the function is complete.  For streaming 
-					 function calls, supply the next opcode and data on clock N+2 or N+5 respectively. 
+ 	         If data is sampled on clock N, then the function call is complete on either clock N+3 or N+6, depending on the call.  
+					 If the function call generates output text, it is registered on the same clock that the function is complete.  The next 
+					 function call, opmode and data, are first sampled on clock N+2 or N+5 respectively. 
+					 
+					 If the user wishes to enter an idle state, an idle opcode must be provided before the next sample clock.  The writer
+					 recommends the use of opcode 4'h0 as idle, but any unlisted opcode is a valid idle opcode.  If the state is instanced
+					 in hash mode (opcode 4'h9) then the only valid function calls are Cyclist (keyed/hash), Absorb, and Squeeze.  All others
+					 are interpreted as idle. Inputs are sampled at every clock while in an idle state.  
+					 
            
-           Any function that calls the permute module completes in six clocks. Not every function call requires a permute.  Functions that end with an 
-           "UP" state as defined by "Xoodyak - A Lightweight Encryption Scheme" cause the next function called to not use permute. Multiple calls to the 
-           same function do not trigger this case.  For example, generating a 256' squeeze requires two sequential calls to squeeze.  Each call requires
-           a permute, and two calls are required, for a total of eleven clocks to generate the entire string if properly staggered.  A following Absorb()
-					 or other function will not require a permute. The Absorb() function call will be complete three clocks after supply, or two clocks after the
-					 squeeze string is generated. 
-           
-           functions which never require permute (two clock stream delays):
+           functions which always have a three clock delay:
            (FUNCTION)       - (OPCODE)
             Cyclist (keyed) -  4'h1
             Cyclist (hash)  -  4'h9
  
-           functions which terminate in an "UP" state (the next non identical function call is a two clock stream delay):
+           functions which terminate in an "UP" state (the next non identical function call is a three clock delay):
             (FUNCTION)      - (OPCODE)     
             Cyclist (hash)  -  4'h9
             Squeeze         -  4'h6
             Squeeze Key     -  4'h8
             
-           functions which require permute (five clock stream delays), unless they began in an "UP" state:
+           functions which have a six clock delay, unless they began in an "UP" state:
             (FUNCTION)      - (OPCODE)
             Nonce           -  4'h2
             Absorb          -  4'h3
@@ -223,8 +220,8 @@
         
 
 
-          rregs_en #(352) idata_1 (input_data_r,         input_data, eph1, sm_idle_next|reset);    
-          rregs_en #(4)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|initial_state|reset);
+          rregs_en #(352, MUX) idata_1 (input_data_r,         input_data, eph1, sm_idle_next|reset);    
+          rregs_en #(4, MUX)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|initial_state|reset);
 
           assign textin_r = input_data_r[351:160];
           assign nonce_r  = input_data_r[351:224];           

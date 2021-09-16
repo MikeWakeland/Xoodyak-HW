@@ -141,11 +141,11 @@ assign ctr_wire = opmode_ctr[8:2];
               .reset         (reset),
      
               .input_data   (input_data_t[funccall]),
-              .opmode       (opmode_wire), //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
+              .opmode       (opmode_wire) //MSB: continue, 0: idle, 1: initialize, 2: nonce, 3: assoc, 4: crypt, 5: decrypt, 6: squeeze, 7: ratchet.   
 
-              .textout_r       (textout_t),
-              .textout_valid     (finished_t)
-          
+           //   .textout_r       (textout_t),
+            //  .textout_valid     (finished_t)
+             
         );
 
 
