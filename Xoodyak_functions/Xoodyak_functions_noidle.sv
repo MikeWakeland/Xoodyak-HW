@@ -21,7 +21,7 @@
                 //----------------------------------------------------------------                
           /*    
            Timing: 
-					 Xoodyak accepts inputs on the positive edge after ready is 1.    
+           Xoodyak accepts inputs on the positive edge after ready is 1.    
            Xoodyak completes functions in either one clock, or four clocks. 
            There is a minimum of one clock spent in the idle state between function calls. This means that clock delays from data supply to data supply 
            are two, or five clocks depending on the function.
@@ -136,39 +136,29 @@
                                    sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
                                    sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, initial_state, one_clock_functions, statechange, run_next, 
                                    shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
-                                   meta_cyc, permute_run_next;
-
-
-          logic one_clock_next, op_switch_adv; 
-
-
-																	 
+                                   meta_cyc, permute_run_next, one_clock_next, op_switch_adv;             
           logic [3:0]              opmode_r; 
           parameter logic MUX = 1; 
           
           
-           assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
+          assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
           assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
-           assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky|sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat);
-          assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz)| (~sm_sky&shadow_sky) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) ;
-					
-					
-					
+          assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky|sm_cyc| sm_non| sm_abs| sm_enc | sm_dec| sm_sqz | sm_sky | sm_rat);
+          assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz)| (~sm_sky&shadow_sky) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) ;                  
+          
           rregs_en #(1) hashmd_1 (hash_mode,  ~reset & opmode_r[3] & opmode[0] , eph1, sm_cyc_next|reset);
           rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~(opmode_r[3]&opmode[0]), eph1, sm_cyc_next|reset); 
 
           assign sm_idle_next      =  ( (~run_next));
-          assign sm_cyc_next       =  ((sm_idle | op_switch_next | one_clock_functions) &((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
-          assign sm_non_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
-          assign sm_abs_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
-          assign sm_enc_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
-          assign sm_dec_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
-          assign sm_sqz_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
-          assign sm_rat_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
-          assign sm_sky_next       = (((sm_idle | op_switch_next | one_clock_functions) & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
-
- 
-               
+          assign sm_cyc_next       =  ((sm_idle | op_switch_next ) &((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
+          assign sm_non_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
+          assign sm_abs_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
+          assign sm_enc_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
+          assign sm_dec_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
+          assign sm_sqz_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
+          assign sm_rat_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
+          assign sm_sky_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
+                
           rregs #(1) smir_2 (sm_idle,    reset | sm_idle_next,   eph1);
           rregs #(1) smsr_2 (sm_cyc,    ~reset & sm_cyc_next,    eph1);
           rregs #(1) smno_4 (sm_non,    ~reset & sm_non_next,    eph1); 
@@ -188,8 +178,7 @@
           rregs_en #(1,MUX) shdwsqz_9      (shadow_sqz , ~reset&sm_sqz      , eph1,  reset|(op_switch_next&~sm_idle));
           rregs_en #(1,MUX) shdwsky_9      (shadow_sky , ~reset&sm_sky      , eph1,  reset|(op_switch_next&~sm_idle));
           rregs_en #(1,MUX) shdwrat_9      (shadow_rat , ~reset&sm_rat      , eph1,  reset|(op_switch_next&~sm_idle));        
-          
-            
+                    
           //I created the meta state to track function calls before the previous one, however only the meta_cyc state was used.  So I deleted the others.    
           rregs_en #(1,MUX) metacyc_5h_8k (meta_cyc , ~reset&shadow_cyc      , eph1,  reset|((op_switch_next|sm_cyc)&~sm_idle));
 
@@ -198,26 +187,38 @@
             //----------------------------------------------------------------
             //State Counters.  Counts how many clocks remain before a state change. 
             //----------------------------------------------------------------   
-          
-          logic [2:0] perm_ctr,  perm_ctr_next;      
 
-          parameter logic [2:0] PERM_INIT = 3'h3;   
+          `define TWELVE_ROUNDS       
+         `ifdef FOUR_ROUNDS
+         logic [2:0] perm_ctr,  perm_ctr_next; 
+         parameter logic [2:0] PERM_INIT = 3'h3;   
+         parameter CTR_WID = 3;
+         `elsif TWELVE_ROUNDS
+         logic [3:0] perm_ctr,  perm_ctr_next; 
+         parameter logic [3:0] PERM_INIT = 4'hb;   
+         parameter CTR_WID = 4;
+         `elsif  THREE_ROUNDS
+         logic [1:0] perm_ctr,  perm_ctr_next; 
+         parameter logic [1:0] PERM_INIT = 3'h2;   
+         parameter CTR_WID = 2;        
+          `else
+         `endif 
           
           assign permute_run_next = ~(sm_idle_next|one_clock_functions);
-          assign op_switch_next = (perm_ctr == 3'h0) | one_clock_functions; 
-          assign op_switch_adv = (perm_ctr == 3'h1) | one_clock_functions;					
+          assign op_switch_next = (perm_ctr == 0) | one_clock_functions; 
+          assign op_switch_adv = (perm_ctr == 1) | one_clock_functions;          
           assign perm_ctr_next = perm_ctr - 1; 
                     
-          rregs_en #(3,MUX) permc_4 (perm_ctr, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
+          rregs_en #(CTR_WID,MUX) permc_4 (perm_ctr, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
          
 
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
             //----------------------------------------------------------------  
-          logic [191:0] textout_sel;									 
+          logic [191:0] textout_sel;                   
           rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, op_switch_next|reset);  
 
-          rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, op_switch_next); 
+          rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, reset|op_switch_next); 
           assign ready = op_switch_adv; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
             //----------------------------------------------------------------
@@ -232,8 +233,8 @@
         
 
 
-          rregs_en #(352) idata_1 (input_data_r,         input_data, eph1, op_switch_adv|sm_idle_next|reset);    
-          rregs_en #(4)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|op_switch_adv|initial_state|reset);
+          rregs_en #(352, MUX) idata_1 (input_data_r,         input_data, eph1, op_switch_adv|sm_idle_next|reset);    
+          rregs_en #(4, MUX)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|op_switch_adv|initial_state|reset);
 
           assign textin_r = textin_rr[351:160];
           assign nonce_r  = textin_rr[351:224];           
@@ -257,20 +258,16 @@
           rregs_en #(384,MUX) statereg_3 (state, down_out, eph1, reset|(op_switch_next&run)); 
                     
           //Created as a means to catch the state for use after a squeeze function.  
-          logic [383:0] saved_data, saved_next;
-					
-					assign saved_next = {((sm_sqz|sm_sky)? state[383:32] : input_data_r) , state[31:0]}; 
-					assign textin_rr = hash_abs_exception|sqz_exception ? input_data_r : saved_data[383:32]; 
-																	
-					
-          rregs_en #(384,MUX) hack_4 (saved_data, reset? '0: saved_next, eph1, 1 ); 
-																																//reset|op_switch_next|sm_cyc_next
+          logic [383:0] saved_data, saved_next;          
+          assign saved_next = {((sm_sqz|sm_sky)? state[383:32] : input_data_r) , state[31:0]}; 
+          assign textin_rr = (sm_abs&hash_mode&shadow_cyc)|sqz_exception ? input_data_r : saved_data[383:32];       
+          rregs_en #(384,MUX) hack_4 (saved_data, saved_next, eph1, sm_sqz|sm_sky|op_switch_adv|reset ); 
+                                                                //reset|op_switch_next|sm_cyc_next
 
           assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
           assign sqz_exception = ~sm_idle&((shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky));
           
-          rmuxd4_im #(384) exceptionhandler (permin, 
-            initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
+          rmuxd3_im #(384) exceptionhandler (permin,   
             hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
             sqz_exception                            , saved_data,   //requires the previous state value since the last permute does not affect the state.  
             state
@@ -300,7 +297,7 @@
             //----------------------------------------------------------------                
           
 
-          permute #(PERM_INIT, MUX) xoopermute(
+          permute #(PERM_INIT, MUX, CTR_WID) xoopermute(
               .eph1          (eph1),
               .reset         (reset),
               .run           (permute_run_next),
@@ -324,20 +321,15 @@
           assign ex_rat  = {128{sm_rat}}; 
 
           //Calculates results of the Down() function based on the function called; nonce, absorb(keyed), or absorb(hash) respectively. 
-          assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
+  //        assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
           assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
-          assign abs_hash =  {absdata_r[351:224], 8'h1, 247'h0, ~shadow_abs};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
-                                                                               //Also the software doesn't recognize the down() function
+          assign abs_hash =  {absdata_r[351:224], 8'h1, 246'h0, (sm_non&~shadow_non) , (sm_non&~shadow_non)^(sm_abs&~shadow_abs)};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
+                                                                                                             //Also the software doesn't recognize the down() function
           
           
           //Selects which form of Down() modification is selected to be applied to the state.   
-          rmuxd4_im #(384) absot (abs_down_modifier,
-                        sm_non                 ,abs_non,
-                        sm_abs&keyed_mode      ,abs_keyed, 
-                        sm_abs&hash_mode       ,abs_hash,
-                        384'h0
-          ); 
-              
+          assign abs_down_modifier = hash_mode|sm_non? abs_hash : abs_keyed;
+          
           //For one clock functions the state, subject to the exception handler, is applied to the down function.
           //These are the "one clock functions"            
           assign down_input =  one_clock_functions ? permin : permute_out;
@@ -382,14 +374,14 @@
  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
  
      
-      module permute #(parameter PERM_INIT=3, parameter MUX = 1)( 
+      module permute #(parameter PERM_INIT, parameter MUX, parameter CTR_WID)( 
       
           input logic          eph1,
           input logic          reset, 
            
           input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
-          input logic  [2:0]   sbox_ctrl, 
+          input logic  [CTR_WID-1:0]   sbox_ctrl, 
           
           output logic [383:0] state_out
 
@@ -431,19 +423,26 @@
         ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         
-
-      logic  [383:0] state_interm;      
+        `define TWELVE_ROUNDS  
+        `ifdef FOUR_ROUNDS
       logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
       assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
       assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
       assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
-
-
-  
       logic [11:0] sbox_rnd0, sbox_rnd1, sbox_rnd2, sbox_rnd3;
       assign sbox_rnd0 = SBOX0[sbox_ctrl];
       assign sbox_rnd1 = SBOX1[sbox_ctrl];
       assign sbox_rnd2 = SBOX2[sbox_ctrl]; 
+         `elsif TWELVE_ROUNDS
+      logic [11:0][11:0] SBOX0;
+      assign SBOX0 = { 12'h58 ,12'h38 , 12'h3c0,12'hd0 ,12'h120, 12'h14 , 12'h60 ,12'h2c , 12'h380,12'hf0 ,12'h1a0 ,12'h12   }; 
+      logic [11:0] sbox_rnd0;
+      assign sbox_rnd0 = SBOX0[sbox_ctrl];
+          `else
+      `endif
+      
+      logic [383:0] state_interm; 
+      
       
         //Greek syms.  θ ρwest ι Χ ρeast
         //The CIBOX constants, retained for reference, are: '{ 32'h58, 32'h38, 32'h3c0, 32'hD0, 32'h120, 32'h14, 32'h60, 32'h2c, 32'h380, 32'hF0, 32'h1A0, 32'h12}; 
@@ -469,7 +468,8 @@
     
      assign permin = (sbox_ctrl == PERM_INIT) ? bits_le : state_recycle;  
       
-      permute_rnd perm3( 
+         `ifdef FOUR_ROUNDS
+         permute_rnd3 perm3( 
       
           .rc0  (sbox_rnd0),
           .rc1  (sbox_rnd1),
@@ -478,7 +478,18 @@
           
           .state_out (state_interm)
 
+      ); 
+      `elsif TWELVE_ROUNDS
+       permute_rnd1 perm1( 
+      
+          .rc0  (sbox_rnd0),
+          .state_in  (permin),
+          
+          .state_out (state_interm)
+
       );
+        `else
+      `endif
       
       rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
     
@@ -505,7 +516,7 @@
  
  
  
-       module permute_rnd( 
+       module permute_rnd3( 
       
          
           input logic [11:0]    rc0,
@@ -791,4 +802,138 @@ assign rho_west_2[0][0] = theta_out_2[0][0];
         
         assign state_out = rho_east_2;
 
-      endmodule: permute_rnd
+      endmodule: permute_rnd3
+      
+      
+      
+/*-------------------------------------------------------*/
+
+
+       module permute_rnd1( 
+      
+         
+          input logic [11:0]    rc0,  
+          input logic  [383:0]  state_in,  //Indicies: plane, lane, zed          
+          output logic [383:0] state_out
+
+      );
+                 
+
+        
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////Round zero///////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////
+        
+        //θ 
+        
+        logic [3:0][31:0] p_0, e_0; //Indicies: lane, zed.
+        logic [2:0][3:0][31:0] perm_input_0;
+
+        assign perm_input_0 = state_in;
+        
+        // P <- A0 + A1 + A2
+        assign p_0 =  perm_input_0[0]^perm_input_0[1]^perm_input_0[2]; 
+
+        // P<<<(1, 5)
+        logic [3:0][31:0] p_x1_z5_0, p_x1_z14_0;
+        assign p_x1_z5_0[3] = {p_0[0][26:0], p_0[0][31:27]}; 
+        assign p_x1_z5_0[2] = {p_0[3][26:0], p_0[3][31:27]}; 
+        assign p_x1_z5_0[1] = {p_0[2][26:0], p_0[2][31:27]}; 
+        assign p_x1_z5_0[0] = {p_0[1][26:0], p_0[1][31:27]};
+
+        // P<<<(1, 14)
+        assign p_x1_z14_0[3] ={p_0[0][17:0], p_0[0][31:18]};
+        assign p_x1_z14_0[2] ={p_0[3][17:0], p_0[3][31:18]}; 
+        assign p_x1_z14_0[1] ={p_0[2][17:0], p_0[2][31:18]}; 
+        assign p_x1_z14_0[0] ={p_0[1][17:0], p_0[1][31:18]};  
+
+        // E <- P<<<(1, 5) ^  P<<<(1, 14)
+        assign e_0 = p_x1_z5_0^p_x1_z14_0;
+
+        
+        // Ay <- Ay ^ E, for y={0,1,2}
+        logic [2:0][3:0][31:0] theta_out_0;
+        
+        assign theta_out_0[2] = perm_input_0[2]^e_0;
+        assign theta_out_0[1] = perm_input_0[1]^e_0;
+        assign theta_out_0[0] = perm_input_0[0]^e_0;
+
+        //End θ
+
+
+        //ρwest
+                
+        logic [2:0][3:0][31:0] rho_west_0;
+
+        // A2 <- A2<<<(0,11)
+        // Shifts the A2 plane 11 bits in the +z direction.  
+        assign rho_west_0[2][3] = {theta_out_0[2][3][20:0] , theta_out_0[2][3][31:21]};
+        assign rho_west_0[2][2] = {theta_out_0[2][2][20:0] , theta_out_0[2][2][31:21]};
+        assign rho_west_0[2][1] = {theta_out_0[2][1][20:0] , theta_out_0[2][1][31:21]};
+        assign rho_west_0[2][0] = {theta_out_0[2][0][20:0] , theta_out_0[2][0][31:21]};
+
+        // A1 <- A1<<<(1,0)
+        assign rho_west_0[1][3] = theta_out_0[1][0];
+        assign rho_west_0[1][2] = theta_out_0[1][3];
+        assign rho_west_0[1][1] = theta_out_0[1][2];
+        assign rho_west_0[1][0] = theta_out_0[1][1];
+        
+
+        // ι, which is included as part of ρwest
+        // A0 <- A0^Ci 
+     /***WARNING! Table 2 of the the specification requires that the round constant's least significant bit is at z = 0,
+         but software test benching has reversed what order these values are applied.  For consistency purposes I have 
+         kept them reversed to match the software, but this is not algorithmically correct per the specification.*** */
+
+assign rho_west_0[0][3][31:12]= theta_out_0[0][3][31:12];
+assign rho_west_0[0][3][11:0] = theta_out_0[0][3][11:0] ^ rc0; 
+        assign rho_west_0[0][2] = theta_out_0[0][2]; 
+        assign rho_west_0[0][1] = theta_out_0[0][1]; 
+assign rho_west_0[0][0] = theta_out_0[0][0];  //The round constant, 32'h58, should be applied HERE.
+
+        //END ρwest
+          
+
+        //Χ  
+        logic [2:0][3:0][31:0] chi_out_0;
+        
+        //Logically computes the following steps:
+        // B0 <- ~A1^A2
+        // B1 <- ~A2^A0
+        // B2 <- ~A0^A1
+        // Ay <- Ay^By for y{0,1,2}
+        assign chi_out_0[2] = rho_west_0[2]^(rho_west_0[1]&~rho_west_0[0]);
+        assign chi_out_0[1] = rho_west_0[1]^(rho_west_0[0]&~rho_west_0[2]);
+        assign chi_out_0[0] = rho_west_0[0]^(rho_west_0[2]&~rho_west_0[1]);
+        
+        //END X
+        
+        
+        //ρeast
+        
+        logic [2:0][3:0][31:0] rho_east_0;
+        
+        //A2 <- A2<<<(2,8)
+        assign rho_east_0[2][3] = {chi_out_0[2][1][23:0], chi_out_0[2][1][31:24]};
+        assign rho_east_0[2][2] = {chi_out_0[2][0][23:0], chi_out_0[2][0][31:24]};
+        assign rho_east_0[2][1] = {chi_out_0[2][3][23:0], chi_out_0[2][3][31:24]};
+        assign rho_east_0[2][0] = {chi_out_0[2][2][23:0], chi_out_0[2][2][31:24]};
+
+        //A1 <- A1<<<(0,1)
+        assign rho_east_0[1][3] = {chi_out_0[1][3][30:0], chi_out_0[1][3][31]};  
+        assign rho_east_0[1][2] = {chi_out_0[1][2][30:0], chi_out_0[1][2][31]};
+        assign rho_east_0[1][1] = {chi_out_0[1][1][30:0], chi_out_0[1][1][31]};
+        assign rho_east_0[1][0] = {chi_out_0[1][0][30:0], chi_out_0[1][0][31]};
+       
+        //A0 is not modified. 
+        assign rho_east_0[0] = chi_out_0[0];
+
+       //end ρeast
+        
+        //ρeast is the final step in the permutation.  The output of round n is fed directly into 
+        //round n+1.  
+        
+        logic [383:0] round_out_0;
+        assign state_out = rho_east_0;
+
+      endmodule: permute_rnd1      

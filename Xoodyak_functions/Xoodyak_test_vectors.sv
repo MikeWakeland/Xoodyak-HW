@@ -64,7 +64,7 @@ assign ciphertext	= (opmode_ctr > 21)? 192'h87a06d5561b0d87c20a12db5d34783258ff7
   print8(&tag, 16);
 
  
-   										 
+  										 
 										 
 
 Software output on this function: 										 
@@ -94,7 +94,7 @@ state out from perm is
 01993b3a0b4c820ecb7958a1bc6ee8c6c993f0b805cfcd9925dbd432e8925bf7e0649a51ad281acd0180ab3261a753a8
 state after absorbing AD is 
 60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a753a8
-60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a75328
+
 Before CRYPTO, the state is: 
 60fb585e6e2ae566a21333cdd10087b6a8f193dc60a9aaf14cb1bf5e85fc34878106f935c84e7da568eac05e60a753a8
 state input to perm is 
@@ -126,6 +126,8 @@ The state before squeeze is:
 bb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e7b770716bbfb29f071d2b662f91763942ea7c4a3fa2542b7
 state input to perm is 
 bb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e7b770716bbfb29f071d2b662f91763942ea7c4a3fa2542f7
+bb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e7b770716bbfb29f071d2b662f91763942ea7c4a3fa254297
+
 state out from perm is 
 9dbe0dbab3c16ac63756be78c6a29a234fe4b9ca4605d51622b8726600188c523de45ac04fc33609a39ad4707c5fa508
 The state after squeeze is: 
@@ -220,12 +222,7 @@ xoocycle_cyclist(&cyc, (CU8P)"", 0, xoocycle_empty, 0,
   xoocycle_squeeze(&cyc, tag2, 32);
   print8(&tag2, 32);
 	
-	
-	
-	
-	
-	
-	
+		
 	
 	-----------------------------------------------------------------------
 	

@@ -210,11 +210,7 @@
           assign perm_ctr_next = perm_ctr - 1; 
                     
           rregs_en #(CTR_WID,MUX) permc_4 (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
-         
-				 
 
-				 
-				 
 
             //----------------------------------------------------------------
             //Output flags. Synchronizes outputs for sqzdone and encdone.  
@@ -263,7 +259,9 @@
                     
           //Created as a means to catch the state for use after a squeeze function.  
           logic [383:0] saved_squeeze;
-          rregs_en #(384,MUX) hack_4 (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
+          
+					
+					rregs_en #(384,MUX) hack_4 (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
                  
 
           assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
