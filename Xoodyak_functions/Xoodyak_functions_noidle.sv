@@ -10,7 +10,7 @@
 
           output logic            ready, 
           output logic [191:0]    textout_r,
-          output logic            textout_valid
+          output logic            textout_valid_r
           
         );
         
@@ -188,28 +188,28 @@
             //State Counters.  Counts how many clocks remain before a state change. 
             //----------------------------------------------------------------   
 
-          `define TWELVE_ROUNDS       
-         `ifdef FOUR_ROUNDS
-         logic [2:0] perm_ctr,  perm_ctr_next; 
+          `define THREE_ROUND_PERMUTE       
+         `ifdef THREE_ROUND_PERMUTE
+         logic [2:0] perm_ctr_r,  perm_ctr_next; 
          parameter logic [2:0] PERM_INIT = 3'h3;   
          parameter CTR_WID = 3;
-         `elsif TWELVE_ROUNDS
-         logic [3:0] perm_ctr,  perm_ctr_next; 
+         `elsif ONE_ROUND_PERMUTE
+         logic [3:0] perm_ctr_r,  perm_ctr_next; 
          parameter logic [3:0] PERM_INIT = 4'hb;   
          parameter CTR_WID = 4;
-         `elsif  THREE_ROUNDS
-         logic [1:0] perm_ctr,  perm_ctr_next; 
+         `elsif  FOUR_ROUND_PERMUTE
+         logic [1:0] perm_ctr_r,  perm_ctr_next; 
          parameter logic [1:0] PERM_INIT = 3'h2;   
          parameter CTR_WID = 2;        
           `else
          `endif 
           
           assign permute_run_next = ~(sm_idle_next|one_clock_functions);
-          assign op_switch_next = (perm_ctr == 0) | one_clock_functions; 
-          assign op_switch_adv = (perm_ctr == 1) | one_clock_functions;          
-          assign perm_ctr_next = perm_ctr - 1; 
+          assign op_switch_next = (perm_ctr_r == 0) | one_clock_functions; 
+          assign op_switch_adv = (perm_ctr_r == 1) | one_clock_functions;          
+          assign perm_ctr_next = perm_ctr_r - 1; 
                     
-          rregs_en #(CTR_WID,MUX) permc_4 (perm_ctr, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
+          rregs_en #(CTR_WID,MUX) permc_4 (perm_ctr_r, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
          
 
             //----------------------------------------------------------------
@@ -218,32 +218,32 @@
           logic [191:0] textout_sel;                   
           rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, op_switch_next|reset);  
 
-          rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, reset|op_switch_next); 
+          rregs_en #(1, MUX) txtutr ( textout_valid_r , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, reset|op_switch_next); 
           assign ready = op_switch_adv; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  Instantiates the state.  
             //----------------------------------------------------------------
   
-          logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
-          logic [127:0]     key_r,nonce_r;
-          logic [351:0]     absdata_r, input_data_r, input_data_trial, textin_rr;
+          logic [191:0]     text    ;  //Either plain text or cipher text depending on opmode
+          logic [127:0]     key,nonce;
+          logic [351:0]     absdata, input_data_r, input_data_trial, operating_text;
           logic [383:0]     state_cyclist;
           logic [127:0]     ex_hash;
         
 
 
-          rregs_en #(352, MUX) idata_1 (input_data_r,         input_data, eph1, op_switch_adv|sm_idle_next|reset);    
-          rregs_en #(4, MUX)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|op_switch_adv|initial_state|reset);
+          rregs_en #(352, MUX) idata_1 (input_data_r,  input_data										 , eph1, op_switch_adv|sm_idle_next|reset);    
+          rregs_en #(4, MUX)   opmd_1  (opmode_r,      reset? '0: opmode             , eph1, sm_idle_next|op_switch_adv|initial_state|reset);
 
-          assign textin_r = textin_rr[351:160];
-          assign nonce_r  = textin_rr[351:224];           
-          assign key_r    = textin_rr[351:224];
-          assign absdata_r = textin_rr; 
+          assign text     = operating_text[351:160];
+          assign nonce  = operating_text[351:224];           
+          assign key    = operating_text[351:224];
+          assign absdata = operating_text; 
 
           assign ex_hash = {128{hash_mode}};        
-          assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
-          //assign state_cyclist = {key_r,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
+          assign state_cyclist = {key&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
+          //assign state_cyclist = {key,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
           // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
  
         
@@ -252,25 +252,25 @@
           //Permute Inputs 
           //----------------------------------------------------------------        
             
-          logic [383:0] permute_in, permute_out, absorb_out , state, permin_cd_added, permin, sqz_down, down_out,crypt_down;            
+          logic [383:0] permute_in, permute_out, absorb_out , state_r, permin_cd_added, permin, sqz_down, down_out,crypt_down;            
           logic hash_abs_exception, sqz_exception;
    
-          rregs_en #(384,MUX) statereg_3 (state, down_out, eph1, reset|(op_switch_next&run)); 
+          rregs_en #(384,MUX) statereg_3 (state_r, down_out, eph1, reset|(op_switch_next&run)); 
                     
           //Created as a means to catch the state for use after a squeeze function.  
-          logic [383:0] saved_data, saved_next;          
-          assign saved_next = {((sm_sqz|sm_sky)? state[383:32] : input_data_r) , state[31:0]}; 
-          assign textin_rr = (sm_abs&hash_mode&shadow_cyc)|sqz_exception ? input_data_r : saved_data[383:32];       
-          rregs_en #(384,MUX) hack_4 (saved_data, saved_next, eph1, sm_sqz|sm_sky|op_switch_adv|reset ); 
+          logic [383:0] saved_data_r, saved_next;          
+          assign saved_next = {((sm_sqz|sm_sky)? state_r[383:32] : input_data_r) , state_r[31:0]}; 
+          assign operating_text = (sm_abs&hash_mode&shadow_cyc)|sqz_exception ? input_data_r : saved_data_r[383:32];       
+          rregs_en #(384,MUX) hack_4 (saved_data_r, saved_next, eph1, sm_sqz|sm_sky|op_switch_adv|reset ); 
                                                                 //reset|op_switch_next|sm_cyc_next
 
           assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
           assign sqz_exception = ~sm_idle&((shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky));
           
           rmuxd3_im #(384) exceptionhandler (permin,   
-            hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
-            sqz_exception                            , saved_data,   //requires the previous state value since the last permute does not affect the state.  
-            state
+            hash_abs_exception                       ,{absdata[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
+            sqz_exception                            , saved_data_r,   //requires the previous state value since the last permute does not affect the state.  
+            state_r
           );
                                         
          ///Adds the Cu value for functions, if applicable. Not applicable if the same function is called more than once in a row (shadow_state==sm_state).  
@@ -302,7 +302,7 @@
               .reset         (reset),
               .run           (permute_run_next),
               .state_in      (permin_cd_added),
-              .sbox_ctrl     (perm_ctr),
+              .sbox_ctrl     (perm_ctr_r),
               .state_out     (permute_out) //permute_out is the nonregistered output of the round.  This is necessary to allow the down function to compute on the same clock
           );    
               
@@ -321,9 +321,9 @@
           assign ex_rat  = {128{sm_rat}}; 
 
           //Calculates results of the Down() function based on the function called; nonce, absorb(keyed), or absorb(hash) respectively. 
-  //        assign abs_non =   {nonce_r, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
-          assign abs_keyed = {absdata_r[351:224], absdata_r[223:217], absdata_r[216], absdata_r[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
-          assign abs_hash =  {absdata_r[351:224], 8'h1, 246'h0, (sm_non&~shadow_non) , (sm_non&~shadow_non)^(sm_abs&~shadow_abs)};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
+  //        assign abs_non =   {nonce, 8'h1,  222'h0, 24'h0, ~shadow_non, ~shadow_non};
+          assign abs_keyed = {absdata[351:224], absdata[223:217], absdata[216], absdata[215:0], 8'h1, 16'h0, 6'h0, ~shadow_abs, ~shadow_abs};
+          assign abs_hash =  {absdata[351:224], 8'h1, 246'h0, (sm_non&~shadow_non) , (sm_non&~shadow_non)^(sm_abs&~shadow_abs)};  //The constant is actually 0x01, will fix before build.  Somehow software doesnt catch this - uses 0x00 for all....
                                                                                                              //Also the software doesn't recognize the down() function
           
           
@@ -337,7 +337,7 @@
 
           //Calculates the outputs of the down functions, depending on whether it is an absorb, crypt, or squeeze architype.  
           assign absorb_out = abs_down_modifier^down_input;
-          assign crypt_down = { textin_r^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
+          assign crypt_down = { text    ^(down_input[383:192]&~ex_dec),   down_input[191:185] , ~down_input[184], down_input[183:0] };     
           assign sqz_down[383:256] = {down_input[383:377], down_input[376]^(sm_sqz), down_input[375:256]}&~ex_rat;
           assign sqz_down[255:0]   = {down_input[255:249], down_input[248]^(~sm_sqz), down_input[247:0]};   
                                                                                             
@@ -359,7 +359,7 @@
         
            rmuxd4_im #(192) txtut (  textout_sel ,
               sm_enc                      ,down_out[383:192],
-              sm_dec                      ,textin_r^permute_out[383:192],
+              sm_dec                      ,text    ^permute_out[383:192],
               (sm_sqz|sm_sky)             ,{down_out[383:377], down_out[376]^sm_sqz, down_out[375:256],{64{1'b0}}},
               '0
            );   
@@ -423,25 +423,25 @@
         ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         
-        `define TWELVE_ROUNDS  
-        `ifdef FOUR_ROUNDS
-      logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
-      assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
-      assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
-      assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
-      logic [11:0] sbox_rnd0, sbox_rnd1, sbox_rnd2, sbox_rnd3;
-      assign sbox_rnd0 = SBOX0[sbox_ctrl];
-      assign sbox_rnd1 = SBOX1[sbox_ctrl];
-      assign sbox_rnd2 = SBOX2[sbox_ctrl]; 
-         `elsif TWELVE_ROUNDS
-      logic [11:0][11:0] SBOX0;
-      assign SBOX0 = { 12'h58 ,12'h38 , 12'h3c0,12'hd0 ,12'h120, 12'h14 , 12'h60 ,12'h2c , 12'h380,12'hf0 ,12'h1a0 ,12'h12   }; 
-      logic [11:0] sbox_rnd0;
-      assign sbox_rnd0 = SBOX0[sbox_ctrl];
-          `else
-      `endif
-      
-      logic [383:0] state_interm; 
+					`define THREE_ROUND_PERMUTE  
+					`ifdef THREE_ROUND_PERMUTE
+				logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
+				assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
+				assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
+				assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
+				logic [11:0] sbox_rnd0, sbox_rnd1, sbox_rnd2, sbox_rnd3;
+				assign sbox_rnd0 = SBOX0[sbox_ctrl];
+				assign sbox_rnd1 = SBOX1[sbox_ctrl];
+				assign sbox_rnd2 = SBOX2[sbox_ctrl]; 
+					 `elsif ONE_ROUND_PERMUTE
+				logic [11:0][11:0] SBOX0;
+				assign SBOX0 = { 12'h58 ,12'h38 , 12'h3c0,12'hd0 ,12'h120, 12'h14 , 12'h60 ,12'h2c , 12'h380,12'hf0 ,12'h1a0 ,12'h12   }; 
+				logic [11:0] sbox_rnd0;
+				assign sbox_rnd0 = SBOX0[sbox_ctrl];
+						`else
+				`endif
+				
+				logic [383:0] state_interm; 
       
       
         //Greek syms.  θ ρwest ι Χ ρeast
@@ -466,49 +466,49 @@
                           state_in[263:256],state_in[271:264],state_in[279:272],state_in[287:280]
                           };
     
-     assign permin = (sbox_ctrl == PERM_INIT) ? bits_le : state_recycle;  
-      
-         `ifdef FOUR_ROUNDS
-         permute_rnd3 perm3( 
-      
-          .rc0  (sbox_rnd0),
-          .rc1  (sbox_rnd1),
-          .rc2  (sbox_rnd2),
-          .state_in  (permin),
-          
-          .state_out (state_interm)
+				 assign permin = (sbox_ctrl == PERM_INIT) ? bits_le : state_recycle;  
+					
+						 `ifdef THREE_ROUND_PERMUTE
+						 permute_rnd3 perm3( 
+					
+							.rc0  (sbox_rnd0),
+							.rc1  (sbox_rnd1),
+							.rc2  (sbox_rnd2),
+							.state_in  (permin),
+							
+							.state_out (state_interm)
 
-      ); 
-      `elsif TWELVE_ROUNDS
-       permute_rnd1 perm1( 
-      
-          .rc0  (sbox_rnd0),
-          .state_in  (permin),
-          
-          .state_out (state_interm)
+					); 
+					`elsif ONE_ROUND_PERMUTE
+					 permute_rnd1 perm1( 
+					
+							.rc0  (sbox_rnd0),
+							.state_in  (permin),
+							
+							.state_out (state_interm)
 
-      );
-        `else
-      `endif
-      
-      rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
-    
+					);
+						`else
+					`endif
+							
+					rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
+				
 
-      assign state_out = {      state_interm[103:96] ,state_interm[111:104],state_interm[119:112],state_interm[127:120],
-                                state_interm[71:64]  ,state_interm[79:72]  ,state_interm[87:80]  ,state_interm[95:88],
-                                state_interm[39:32]  ,state_interm[47:40]  ,state_interm[55:48]  ,state_interm[63:56],
-                                state_interm[7:0]    ,state_interm[15:8]   ,state_interm[23:16]  ,state_interm[31:24],                          
-                                
-                                state_interm[231:224],state_interm[239:232],state_interm[247:240],state_interm[255:248],
-                                state_interm[199:192],state_interm[207:200],state_interm[215:208],state_interm[223:216],
-                                state_interm[167:160],state_interm[175:168],state_interm[183:176],state_interm[191:184],
-                                state_interm[135:128],state_interm[143:136],state_interm[151:144],state_interm[159:152],
-                                
-                                state_interm[359:352],state_interm[367:360],state_interm[375:368], state_interm[383:376],
-                                state_interm[327:320],state_interm[335:328],state_interm[343:336],state_interm[351:344],
-                                state_interm[295:288],state_interm[303:296],state_interm[311:304],state_interm[319:312],
-                                state_interm[263:256],state_interm[271:264],state_interm[279:272],state_interm[287:280]
-                              }; 
+					assign state_out = {      state_interm[103:96] ,state_interm[111:104],state_interm[119:112],state_interm[127:120],
+																		state_interm[71:64]  ,state_interm[79:72]  ,state_interm[87:80]  ,state_interm[95:88],
+																		state_interm[39:32]  ,state_interm[47:40]  ,state_interm[55:48]  ,state_interm[63:56],
+																		state_interm[7:0]    ,state_interm[15:8]   ,state_interm[23:16]  ,state_interm[31:24],                          
+																		
+																		state_interm[231:224],state_interm[239:232],state_interm[247:240],state_interm[255:248],
+																		state_interm[199:192],state_interm[207:200],state_interm[215:208],state_interm[223:216],
+																		state_interm[167:160],state_interm[175:168],state_interm[183:176],state_interm[191:184],
+																		state_interm[135:128],state_interm[143:136],state_interm[151:144],state_interm[159:152],
+																		
+																		state_interm[359:352],state_interm[367:360],state_interm[375:368], state_interm[383:376],
+																		state_interm[327:320],state_interm[335:328],state_interm[343:336],state_interm[351:344],
+																		state_interm[295:288],state_interm[303:296],state_interm[311:304],state_interm[319:312],
+																		state_interm[263:256],state_interm[271:264],state_interm[279:272],state_interm[287:280]
+																	}; 
      
      
        endmodule: permute
@@ -517,7 +517,6 @@
  
  
        module permute_rnd3( 
-      
          
           input logic [11:0]    rc0,
           input logic [11:0]    rc1,
