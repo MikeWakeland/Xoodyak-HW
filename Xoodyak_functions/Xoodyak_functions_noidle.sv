@@ -136,7 +136,13 @@
                                    sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
                                    sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, initial_state, one_clock_functions, statechange, run_next, 
                                    shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
-                                   meta_cyc, permute_run_next;                         
+                                   meta_cyc, permute_run_next;
+
+
+          logic one_clock_next, op_switch_adv; 
+
+
+																	 
           logic [3:0]              opmode_r; 
           parameter logic MUX = 1; 
           
@@ -145,7 +151,9 @@
           assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
            assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky|sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat);
           assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz)| (~sm_sky&shadow_sky) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) ;
-          
+					
+					
+					
           rregs_en #(1) hashmd_1 (hash_mode,  ~reset & opmode_r[3] & opmode[0] , eph1, sm_cyc_next|reset);
           rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~(opmode_r[3]&opmode[0]), eph1, sm_cyc_next|reset); 
 
@@ -197,9 +205,10 @@
           
           assign permute_run_next = ~(sm_idle_next|one_clock_functions);
           assign op_switch_next = (perm_ctr == 3'h0) | one_clock_functions; 
+          assign op_switch_adv = (perm_ctr == 3'h1) | one_clock_functions;					
           assign perm_ctr_next = perm_ctr - 1; 
                     
-          rregs_en #(3,MUX) permc_4 (perm_ctr, (reset | statechange ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
+          rregs_en #(3,MUX) permc_4 (perm_ctr, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
          
 
             //----------------------------------------------------------------
@@ -209,7 +218,7 @@
           rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, op_switch_next|reset);  
 
           rregs_en #(1, MUX) txtutr ( textout_valid , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, op_switch_next); 
-          assign ready = op_switch_next; //"Opcodes and data supplied will be registered for use on the clock after this is up."
+          assign ready = op_switch_adv; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  Instantiates the state.  
@@ -217,19 +226,19 @@
   
           logic [191:0]     textin_r;  //Either plain text or cipher text depending on opmode
           logic [127:0]     key_r,nonce_r;
-          logic [351:0]     absdata_r, input_data_r, input_data_trial;
+          logic [351:0]     absdata_r, input_data_r, input_data_trial, textin_rr;
           logic [383:0]     state_cyclist;
           logic [127:0]     ex_hash;
         
 
 
-          rregs_en #(352) idata_1 (input_data_r,         input_data, eph1, op_switch_next|sm_idle_next|reset);    
-          rregs_en #(4)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|op_switch_next|initial_state|reset);
+          rregs_en #(352) idata_1 (input_data_r,         input_data, eph1, op_switch_adv|sm_idle_next|reset);    
+          rregs_en #(4)   opmd_1  (opmode_r,             reset? '0: opmode             , eph1, sm_idle_next|op_switch_adv|initial_state|reset);
 
-          assign textin_r = input_data_r[351:160];
-          assign nonce_r  = input_data_r[351:224];           
-          assign key_r    = input_data_r[351:224];
-          assign absdata_r = input_data_r; 
+          assign textin_r = textin_rr[351:160];
+          assign nonce_r  = textin_rr[351:224];           
+          assign key_r    = textin_rr[351:224];
+          assign absdata_r = textin_rr; 
 
           assign ex_hash = {128{hash_mode}};        
           assign state_cyclist = {key_r&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
@@ -248,9 +257,14 @@
           rregs_en #(384,MUX) statereg_3 (state, down_out, eph1, reset|(op_switch_next&run)); 
                     
           //Created as a means to catch the state for use after a squeeze function.  
-          logic [383:0] saved_squeeze;
-          rregs_en #(384,MUX) hack_4 (saved_squeeze, reset? '0: state, eph1, reset|(sm_idle&(sm_sqz_next|sm_sky_next))); 
-                 
+          logic [383:0] saved_data, saved_next;
+					
+					assign saved_next = {((sm_sqz|sm_sky)? state[383:32] : input_data_r) , state[31:0]}; 
+					assign textin_rr = hash_abs_exception|sqz_exception ? input_data_r : saved_data[383:32]; 
+																	
+					
+          rregs_en #(384,MUX) hack_4 (saved_data, reset? '0: saved_next, eph1, 1 ); 
+																																//reset|op_switch_next|sm_cyc_next
 
           assign hash_abs_exception =  sm_abs_next&hash_mode&shadow_abs&meta_cyc;
           assign sqz_exception = ~sm_idle&((shadow_sqz&~sm_sqz) |(~sm_sky&shadow_sky));
@@ -258,7 +272,7 @@
           rmuxd4_im #(384) exceptionhandler (permin, 
             initial_state                            ,'0,   //First state after reset  Exception handler will require a call to cyclist before you can initialize even in hash mode.  
             hash_abs_exception                       ,{absdata_r[351:224], 8'h1,  248'h1}, //absorbing data after initialization in hash mode (necessary because  state is up)
-            sqz_exception                            , saved_squeeze,   //requires the previous state value since the last permute does not affect the state.  
+            sqz_exception                            , saved_data,   //requires the previous state value since the last permute does not affect the state.  
             state
           );
                                         

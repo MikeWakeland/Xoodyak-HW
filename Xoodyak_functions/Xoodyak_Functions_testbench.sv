@@ -54,8 +54,8 @@
   //use SOFTWARE text to generate the hex values to run through hardware.  THis is much more robust.  
 
   logic [191:0] ciphertext;
-assign ciphertext  = (opmode_ctr[8:0] > 8'he8)? 192'h87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e30 : 192'hbb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e;
-
+assign ciphertext  = (opmode_ctr[8:0] > 8'he3)? 192'h87a06d5561b0d87c20a12db5d34783258ff75fe5d87c0e30 : 192'hbb4416e8d6ce6ef456e2be6c08ce8eccaf42fd7c33b3de1e;
+                                                                                                                       
 logic [351:0] nonce, key, plain, cipher, abs;
 
 assign cipher = {ciphertext, 160'h0};
@@ -86,25 +86,22 @@ Keyed initialize -> nonce -> absorb -> absorb -> crypt -> crypt -> squeeze(keyed
 keyed initialize -> nonce -> absorb -> absorb -> squeezekey() */
   
   
-  assign opmode_t = { 
+   assign opmode_t = { 
   
-6'h10, 6'h9, 6'h9, 6'h13, 6'h13, 6'h13, 6'h16, 6'h16,  6'h13, 6'h13,             //   hash -> abs -> abs -> abs -> sqz -> sqz -> abs -> -abs
-6'h0 , 6'h1 , 6'h2 , 6'h3 , 6'h3,  6'h5 , 6'h5 , 6'h5, 6'h6,  6'h6, 6'h6,  // cyc key -> non -> abs -> abs -> dec -> dec -> sqz -> sqz
-6'h0 , 6'h0, 6'h0, 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h4,  6'h4 , 6'h4 ,  6'h8, 6'h8,       // cyc key -> non -> abs -> abs -> enc -> enc -> sky
+6'h10, 6'h9, 6'h9, 6'h13, 6'h13,  6'h16, 6'h16,  6'h13, 6'h13,             //   hash -> abs -> abs -> abs -> sqz -> sqz -> abs -> -abs
+6'h0 , 6'h0, 6'h0, 6'h1 , 6'h2 , 6'h3 , 6'h3,  6'h5 , 6'h5 , 6'h5, 6'h6,  6'h6, 6'h6,  // cyc key -> non -> abs -> abs -> dec -> dec -> sqz -> sqz
+6'h0 , 6'h0, 6'h0, 6'h0, 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h4,  6'h4 ,  6'h8, 6'h8,       // cyc key -> non -> abs -> abs -> enc -> enc -> sky
 6'h0 , 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h5,  6'h5 , 6'h6,        //
 
 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
 6'h1, 6'h2, 6'h3, 6'h3, 6'h4, 6'h0, 6'h0, 6'h0, 6'h4, 6'h4, 6'h8, 6'h8,
-6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
-6'h0, 6'h0, 6'h0
+6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0
 
- 
+     };  
 
-//6'h0 , 6'h1 , 6'h2 , 6'h2 , 6'h5,  6'h5 , 6'h6        //34
+                
 
-     }; 
-                     
-                                     
+												 
                      
   logic [191:0] plaintext_wire;
 assign plaintext_wire = plaintext_t[opmode_ctr];  
