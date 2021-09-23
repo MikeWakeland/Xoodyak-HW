@@ -7,44 +7,61 @@
           input logic [351:0]     input_data, 
           input logic [3:0]       opmode,    
 
-
-          output logic            ready, 
+          output logic             changed_output_r,
+          output logic [2:0]      func_return_r, 
           output logic [191:0]    textout_r,
           output logic            textout_valid_r
           
         );
         
-        //Parameter definitions are on line 128 and 129.
-
                 //----------------------------------------------------------------
                 //Technical briefing on XOODYAK
                 //----------------------------------------------------------------                
           /*    
-           Timing: 
-           Xoodyak accepts inputs on the positive edge after ready is 1.    
-           Xoodyak completes functions in either one clock, or four clocks. 
-           There is a minimum of one clock spent in the idle state between function calls. This means that clock delays from data supply to data supply 
-           are two, or five clocks depending on the function.
+           Xoodyak requires:
+           > Synchronized function calls and data.  
+           >This build is capable of processing 192' multiples of plaintext and ciphertext.  Outputs are all provided on the same output vector. 
+           >Align the input data on the most significan bits of the input vector, with zeros on the least significant side.
+           >The user must assert all function calls, including idle.  If an input operation is supplied and unchanged, Xoodyak will continue to call the function forever.
+    
+            Xoodyak produces:
+           >Ciphertext and plaintext in increments of 192'. No theoretical maximum of sequential function calls.
+           >Squeezes, tags, and keys in increments of 128'. No theoretical maximum of sequential function calls.
+            The output text is alligned on the most significant bits for 128' outputs.  
+           >A decode signal for reading output text.  The codes are:
+                0 - invalid /none
+                1 - ciphertext
+                2 - plaintext
+                3 - tag (squeeze in keyed mode)
+                4 - hash (squeeze in hash mode)
+                5 - squeeze key 
+            >A one bit signal, changed_output_r, which alerts the user that a new set of output text has been generated.
+             This signal tells the user when there is new text, even when the decode signal is the same (example: multiple encrypt calls in a row)
+          
+           Timing: .    
+           Xoodyak completes functions in either one clock, or four clocks depending on the function.
+           There are two clocks of propogation delay to begin a function's operation.
+           Therefore, a function call is complete (outputs generated) three or six clocks after a function call and data are registered.
+           This means that in all cases the next function will be sampled while the previous function is still running, unless the machine is in the idle state.             
            
            Any function that calls the permute module completes in four clocks. Not every function call requires a permute.  Functions that end with an 
            "UP" state as defined by "Xoodyak - A Lightweight Encryption Scheme" cause the next function called to not use permute. Multiple calls to the 
            same function do not trigger this case.  For example, generating a 256' squeeze requires two sequential calls to squeeze.  Each call requires
            a permute, and two calls are required, for a total of ten clocks to generate the entire string.  A following Absorb() or other function will 
-           not require a permute, and as such there is a 1 clock execution + 1 clock idle = 2 clock delay until the next set of data and function calls
-           can be supplied.  
+           not require a permute, and as such the next input text and opcode will be sampled on the very next clock.  
            
-           functions which never require permute (two clock delays):
+           functions which never require permute (one clock delays - next input sampled immediately after these functions are sampled):
            (FUNCTION)       - (OPCODE)
             Cyclist (keyed) -  4'h1
             Cyclist (hash)  -  4'h9
  
-           functions which terminate in an "UP" state (the next non identical function call is a two clock delay):
+           functions which terminate in an "UP" state (the next non identical function call is a one clock delay - next input sampled immediately after this occurs):
             (FUNCTION)      - (OPCODE)     
             Cyclist (hash)  -  4'h9
             Squeeze         -  4'h6
             Squeeze Key     -  4'h8
             
-           functions which require permute (five clock delays), unless they began in an "UP" state:
+           functions which require permute (four clock delays - next input sampled four clocks after this function is sampled), unless they began in an "UP" state:
             (FUNCTION)      - (OPCODE)
             Nonce           -  4'h2
             Absorb          -  4'h3
@@ -59,26 +76,32 @@
   
            Example 1-
            clk (decimal)       function      
-           0                   Cyclist (keyed) <- Cyclist calls create two clock delays.
-           2                   Nonce 
-           7                   Absorb
-           12                  Encrypt
-           17                  Squeeze
-           22                  Absorb          <- Two clock delay because of the previous function terminating in an "UP" state.
-           24                  Encrypt    
-           29                  Squeeze (key) 
+           0                   Cyclist (keyed) <- Cyclist calls create one clock delays.
+           1                   Nonce 
+           5                   Absorb
+           9                   Encrypt
+           13                  Squeeze
+           14                  Absorb          <- One clock delay because of the previous function terminating in an "UP" state.
+           15                  null            <-Encrypt function return, ciphertext generated on output pins textout_r
+           18                  Encrypt    
+           22                  Squeeze (key) 
+           24                  null            <-Encrypt function return, ciphertext generated on output pins textout_r
+           28                  null            <-SqueezeKey function return, Key generated on output pins textout_r
            
            Example 2-
            clk (decimal)       function 
            0                   Cyclist (hash)  <- Cyclist calls create two clock delays.
-           2                   Absorb           <- Two clock delay because of the previous function terminating in an "UP" state.
-           4                   Absorb  
-           9                   Absorb
+           1                   Absorb           <- one clock delay because of the previous function terminating in an "UP" state.
+           2                   Absorb  
+           6                   Absorb
+           10                  Squeeze
            14                  Squeeze
-           19                  Squeeze
-           24                  Squeeze
-           29                  Cyclist (keyed)  <- Cyclist calls create two clock delays.
-           31                  Nonce
+           16                  null           <-Squeeze function return, hash text generated on output pins textout_r
+           18                  Squeeze
+           20                  null           <-Squeeze function return, hash text generated on output pins textout_r           
+           22                  Cyclist (keyed)  <- Cyclist calls create one clock delays.
+           22                  null           <-Squeeze function return, hash text generated on output pins textout_r.  Occurs on same clock as the Cyclist call on the input. 
+           23                  Nonce
            
 
           
@@ -87,26 +110,23 @@
            >Hashed/Keyed mode can only be changed during a call to the Cyclist instantiation.
            >A Hashed/Keyed mode must be established before any other function calls are made.  Resets wipe both modes.
            >The user can call any other sequence of functions, even if they are not meaningful.  cyclist() -> encrypt() -> decyrpt() is a valid, if illogical series of function calls.
-           >Permute requires four clock cycles.  One clock in the idle state is required between function calls.  Thus, the start -> start time is 5 clocks.
-           >Ratchet calls can only handle the 128' length call.  Theoretical maximum sequential function calls are unlimited, but may not have a purpose.  
+           >Functions that require permute requires four clock cycles to complete operations.  There is a six clock delay from input to output, 4 clock streaming delay.   
+           >Ratchet calls can only handle the 128' length call.  Theoretical maximum sequential function calls are unlimited, but may not have a purpose in the philosophical sense.  
            >Xoodyak is capable of other function calls after Squeeze(), and correctly handles whether the state is "up" or "down."  
            >If a function call is made after a function that ends with the state being "up" an exception triggers to perform a one clock function.
-           
-           Xoodyak requires:
-           > Synchronized function calls and data.  
-           >This build is capable of processing 192' multiples of plaintext and ciphertext.
-           >Absorb data is taken in 352'/44byte increments.  The user is responsible for padding the input data.  
-           >Nonce dada is taken in 128'/16byte increments.  The user is responsible for padding the input data.
-           >Keys are 128'/16 bytes only.  Greater key lengths can be absorbed through either the nonce or absorb functions, subject to their length requirements.  
-           >Align the data on the most significan bits of the input vector, with zeros on the least significant side. 
-           
-            
-            Xoodyak produces:
-          >Ciphertext and plaintext in increments of 192'. No theoretical maximum of sequential function calls.
-          >Squeezes, tags, and keys in increments of 128'. No theoretical maximum of sequential function calls.
-           The output text is alligned on the most significant bits for 128' outputs.  
-          >A 1' signal to show inputs will be accepted on the next clock.            
-          
+           >This build is based on the Xoodyak instantiation of the Cyclist{} algorithm by Keccak.  The parameters used, hardwired to the build are:  
+                f/Xoodoo[12] = 48 bytes = 384 bits     - length of the state
+                Rhash = 16 bytes = 128 bits            - max hash absorb value in one permute cycle.
+                Rkin = 44 bytes = 352 bits             - max absorb value in keyed mode in one permute cycle.
+                Rkout = 24 bytes = 192 bits            - max plaintext/ciphertext processing in one permute cycle.
+                lratchet = 16 bytes = 128 bits         - length of state overwrite in ratchet()
+                   
+              Persuant to page 22, section 6 of "Xoodyak, a lightweight cryptography scheme."
+                k = 16 bytes = 128 bits                - length of the key
+                id = null                              - length of optional vector.  Not used.  Absorb the nonce through dedicated function "nonce" in keyed mode.
+                tag length = 16 bytes = 128 bits        - length of squeeze tag text (hash in AEAD mode) for every call to the function.  
+                n = 32 bytes = 256 bits                - length of hash of arbitrary state in hash mode.  Call squeeze() twice to generate this text.  Capable of any multiple of 16 bytes.  
+                     
             
                  
            */ 
@@ -136,28 +156,36 @@
                                    sm_abs_next , sm_abs , sm_enc_next, sm_enc, sm_sqz_next, sm_sqz, sm_finish_next, run, sm_non, sm_dec_next, sm_dec,
                                    sm_rat, sm_rat_next, sm_sky, sm_sky_next, hash_mode, keyed_mode, initial_state, one_clock_functions, statechange, run_next, 
                                    shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
-                                   meta_cyc, permute_run_next, one_clock_next, op_switch_adv;             
+                                   meta_cyc, permute_run_next, one_clock_next, op_switch_adv, sqz_exception, take_inputs,
+                                   hash_abs_exception;               
+           logic [2:0]              output_decode, func_queue1, func_queue2;           
           logic [3:0]              opmode_r; 
-          parameter logic MUX = 1; 
+          logic [127:0]            key,nonce, ex_hash;                  
+          logic [191:0]            textout_sel, text, ex_rat, ex_dec;
+          logic [351:0]            absdata, input_data_r, input_data_trial, operating_text;
+          logic [383:0]            state_cyclist, permute_in, permute_out, absorb_out , state_r, permin_cd_added, permin, sqz_down, down_out,crypt_down,
+                                   saved_data_r, saved_next, abs_down_modifier, abs_keyed, abs_hash, abs_non, down_input;            
           
+          parameter logic MUX = 1; 
           
           assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
           assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
           assign initial_state = ~(shadow_cyc|shadow_non|shadow_abs|shadow_enc|shadow_dec|shadow_sqz|shadow_rat|shadow_sky|sm_cyc| sm_non| sm_abs| sm_enc | sm_dec| sm_sqz | sm_sky | sm_rat);
-          assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz)| (~sm_sky&shadow_sky) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) ;                  
+          assign one_clock_functions = sm_cyc | (~sm_sqz&shadow_sqz)| (~sm_sky&shadow_sky) | (sm_abs&hash_mode&~shadow_abs&shadow_cyc) ;   
+          assign one_clock_next =      sm_cyc_next |   ~sm_sqz_next&sm_sqz | run_next&~sm_sqz_next&shadow_sqz |  ~sm_sky_next&sm_sky | run_next&~sm_sky_next&shadow_sky | (sm_abs_next&hash_mode&~shadow_abs&(sm_cyc|(shadow_cyc&~sm_abs)));
           
           rregs_en #(1) hashmd_1 (hash_mode,  ~reset & opmode_r[3] & opmode[0] , eph1, sm_cyc_next|reset);
           rregs_en #(1) keymd_1  (keyed_mode, ~reset & ~(opmode_r[3]&opmode[0]), eph1, sm_cyc_next|reset); 
 
-          assign sm_idle_next      =  one_clock_functions|( (~run_next));
-          assign sm_cyc_next       =  ~one_clock_functions&((sm_idle | op_switch_next ) &((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
-          assign sm_non_next       = ~one_clock_functions&(((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
-          assign sm_abs_next       = ~one_clock_functions&(((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
-          assign sm_enc_next       = ~one_clock_functions&(((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
-          assign sm_dec_next       = ~one_clock_functions&(((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
-          assign sm_sqz_next       = ~one_clock_functions&(((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
-          assign sm_rat_next       = ~one_clock_functions&(((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
-          assign sm_sky_next       = ~one_clock_functions&(((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
+          assign sm_idle_next      =  (~run_next);
+          assign sm_cyc_next       =  ((sm_idle | op_switch_next ) &((opmode_r[3:0] == 4'b1001) | (opmode_r[3:0] == 4'b0001)));        
+          assign sm_non_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0010) & keyed_mode) | (sm_non   &  ~op_switch_next))&~initial_state; 
+          assign sm_abs_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0011)             ) | (sm_abs   &  ~op_switch_next))&~initial_state; // Not Keymode only
+          assign sm_enc_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0100) & keyed_mode) | (sm_enc   &  ~op_switch_next))&~initial_state;
+          assign sm_dec_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0101) & keyed_mode) | (sm_dec   &  ~op_switch_next))&~initial_state; 
+          assign sm_sqz_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0110)             ) | (sm_sqz   &  ~op_switch_next))&~initial_state; //Not keyed mode only.
+          assign sm_rat_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b0111) & keyed_mode) | (sm_rat   &  ~op_switch_next))&~initial_state; 
+          assign sm_sky_next       = (((sm_idle | op_switch_next ) & (opmode_r[3:0] == 4'b1000) & keyed_mode) | (sm_sky   &  ~op_switch_next))&~initial_state; 
                 
           rregs #(1) smir_2 (sm_idle,    reset | sm_idle_next,   eph1);
           rregs #(1) smsr_2 (sm_cyc,    ~reset & sm_cyc_next,    eph1);
@@ -184,9 +212,9 @@
 
          assign statechange = sm_idle&(sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next | sm_dec_next | sm_sqz_next | sm_sky_next | sm_rat_next); //sets the perm counter to three whenever there's a state change on the next clock. 
    
-            //----------------------------------------------------------------
-            //State Counters.  Counts how many clocks remain before a state change. 
-            //----------------------------------------------------------------   
+          //----------------------------------------------------------------
+          //State Counters.  Counts how many clocks remain before a state change. 
+          //----------------------------------------------------------------   
 
           `define THREE_ROUND_PERMUTE       
          `ifdef THREE_ROUND_PERMUTE
@@ -203,52 +231,51 @@
          parameter CTR_WID = 2;        
           `else
          `endif 
-          
+         
           assign permute_run_next = ~(sm_idle_next|one_clock_functions);
           assign op_switch_next = (perm_ctr_r == 0) | one_clock_functions; 
-          assign op_switch_adv = (perm_ctr_r == 1) | one_clock_functions;          
+          assign op_switch_adv = (perm_ctr_r == 1) | one_clock_next;          
           assign perm_ctr_next = perm_ctr_r - 1; 
                     
           rregs_en #(CTR_WID,MUX) permc_4 (perm_ctr_r, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
          
 
-            //----------------------------------------------------------------
-            //Output flags. Synchronizes outputs for sqzdone and encdone.  
-            //----------------------------------------------------------------  
-          logic [191:0] textout_sel;                   
-          rregs_en #(192, MUX) texttrial_9 (textout_r, reset? '0: textout_sel, eph1, op_switch_next|reset);  
+          //----------------------------------------------------------------
+          //Output flags. Generates the output text and selects for what function.  
+          //Ciphertex   - code 1
+          //Plaintext   - code 2
+          //Tag (keyed) - code 3
+          //Hash (hash) - code 4
+          //----------------------------------------------------------------  
+          
+          rmuxdx3_im #(3) utput1 (  func_queue1,
+                              reset|sm_enc,            3'h1,
+                             ~reset&sm_dec,            3'h2, 
+                             ~(reset|sm_dec|sm_enc),   3'h3); //functions as: |(sm_sqz&keyed_mode)
+                               
+          rmuxd3_im #(3) utput2 (  func_queue2,
+                             ~reset&sm_sqz&hash_mode,  3'h4,
+                             ~reset&sm_sky,            3'h5,
+                                                       3'h0);
+                                                   
+                              
+                              
+         assign output_decode =  (sm_enc|sm_dec|(sm_sqz&keyed_mode))?func_queue1 : func_queue2; 
+          
+          rregs    #(1) chnged (changed_output_r, reset? '0 : (sm_sqz&hash_mode | sm_sqz&keyed_mode | sm_dec | sm_enc |sm_sky)&op_switch_next , eph1); 
+          rregs_en #(3, MUX)   opmd_q  (func_return_r,      reset? '0: output_decode        , eph1, op_switch_next|reset);        
+          rregs_en #(192, MUX) textout_9 (textout_r, reset? '0: textout_sel, eph1, op_switch_next|reset);            
+          
+          
 
           rregs_en #(1, MUX) txtutr ( textout_valid_r , ~reset&(sm_enc|sm_dec|sm_sqz|sm_sky), eph1, reset|op_switch_next); 
-          assign ready = op_switch_adv; //"Opcodes and data supplied will be registered for use on the clock after this is up."
 
-
-							         logic advanced_ready, ready2;
-							     assign advanced_ready = ((perm_ctr_r == 2) | sm_idle_next | sm_cyc_next | (~sm_sqz_next&sm_sqz) | (~sm_sky_next&sm_sky) | (sm_abs_next&~sm_abs&hash_mode&~shadow_abs&shadow_cyc));
-							    rregs #(1) readyflak (ready2, advanced_ready, eph1); 
-
-
-
-
-
-
-
-
-
-
+            assign take_inputs   = (op_switch_adv | one_clock_next |sm_idle_next) &( ~sqz_exception|sm_cyc);
             //----------------------------------------------------------------
             //Register Xoodyak's inputs.  Instantiates the state.  
             //----------------------------------------------------------------
-  
-          logic [191:0]     text    ;  //Either plain text or cipher text depending on opmode
-          logic [127:0]     key,nonce;
-          logic [351:0]     absdata, input_data_r, input_data_trial, operating_text;
-          logic [383:0]     state_cyclist;
-          logic [127:0]     ex_hash;
-        
-
-
-          rregs_en #(352, MUX) idata_1 (input_data_r,  input_data										 , eph1, op_switch_adv|sm_idle_next|reset);    
-          rregs_en #(4, MUX)   opmd_1  (opmode_r,      reset? '0: opmode             , eph1, sm_idle_next|op_switch_adv|reset);
+          rregs_en #(352, MUX) idata_1 (input_data_r,  input_data                     , eph1, take_inputs|reset);    
+          rregs_en #(4, MUX)   opmd_1  (opmode_r,      reset? '0: opmode             , eph1, take_inputs|reset);          
 
           assign text     = operating_text[351:160];
           assign nonce  = operating_text[351:224];           
@@ -259,20 +286,13 @@
           assign state_cyclist = {key&~ex_hash[127:0],15'h0, ~hash_mode, 238'h0, ~hash_mode, 1'h0};
           //assign state_cyclist = {key,8'h0, 8'h01, 232'h0, 8'h2}; <- keyed mode only.
           // So the arguments are {key, mod256(id) which is zero, 8'h01, a bunch of zeros, end with 8'h2
- 
-        
-            
+           
           //----------------------------------------------------------------
           //Permute Inputs 
           //----------------------------------------------------------------        
-            
-          logic [383:0] permute_in, permute_out, absorb_out , state_r, permin_cd_added, permin, sqz_down, down_out,crypt_down;            
-          logic hash_abs_exception, sqz_exception;
-   
           rregs_en #(384,MUX) statereg_3 (state_r, down_out, eph1, reset|(op_switch_next&run)); 
                     
-          //Created as a means to catch the state for use after a squeeze function.  
-          logic [383:0] saved_data_r, saved_next;          
+          //Created as a means to catch the state for use after a squeeze function.            
           assign saved_next = {((sm_sqz|sm_sky)? state_r[383:32] : input_data_r) , state_r[31:0]}; 
           assign operating_text = (sm_abs&hash_mode&shadow_cyc)|sqz_exception ? input_data_r : saved_data_r[383:32];       
           rregs_en #(384,MUX) hack_4 (saved_data_r, saved_next, eph1, sm_sqz|sm_sky|op_switch_adv|reset ); 
@@ -326,10 +346,6 @@
             //Permute post processing --- Modifies the permute output for recyclying through the down() function and associated logic.   
             //This logic occurs in time during the last clock of permute activity, technically after permute (continuous time) but during the same clock.
             //----------------------------------------------------------------          
-          
-  
-          logic [383:0] abs_down_modifier, abs_keyed, abs_hash, abs_non, down_input;
-          logic [191:0] ex_rat, ex_dec;
 
           assign ex_dec  = {192{sm_dec}};
           assign ex_rat  = {128{sm_rat}}; 
@@ -393,7 +409,7 @@
           input logic          eph1,
           input logic          reset, 
            
-          input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is ready.  
+          input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is take_inputs.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
           input logic  [CTR_WID-1:0]   sbox_ctrl, 
           
@@ -437,25 +453,25 @@
         ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         
-					`define THREE_ROUND_PERMUTE  
-					`ifdef THREE_ROUND_PERMUTE
-				logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
-				assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
-				assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
-				assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
-				logic [11:0] sbox_rnd0, sbox_rnd1, sbox_rnd2, sbox_rnd3;
-				assign sbox_rnd0 = SBOX0[sbox_ctrl];
-				assign sbox_rnd1 = SBOX1[sbox_ctrl];
-				assign sbox_rnd2 = SBOX2[sbox_ctrl]; 
-					 `elsif ONE_ROUND_PERMUTE
-				logic [11:0][11:0] SBOX0;
-				assign SBOX0 = { 12'h58 ,12'h38 , 12'h3c0,12'hd0 ,12'h120, 12'h14 , 12'h60 ,12'h2c , 12'h380,12'hf0 ,12'h1a0 ,12'h12   }; 
-				logic [11:0] sbox_rnd0;
-				assign sbox_rnd0 = SBOX0[sbox_ctrl];
-						`else
-				`endif
-				
-				logic [383:0] state_interm; 
+          `define THREE_ROUND_PERMUTE  
+          `ifdef THREE_ROUND_PERMUTE
+        logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
+        assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
+        assign SBOX1 = { 12'h38 ,  12'h120,  12'h2c , 12'h1a0  };      
+        assign SBOX2 = { 12'h3c0,  12'h14 ,  12'h380, 12'h12   };  
+        logic [11:0] sbox_rnd0, sbox_rnd1, sbox_rnd2, sbox_rnd3;
+        assign sbox_rnd0 = SBOX0[sbox_ctrl];
+        assign sbox_rnd1 = SBOX1[sbox_ctrl];
+        assign sbox_rnd2 = SBOX2[sbox_ctrl]; 
+           `elsif ONE_ROUND_PERMUTE
+        logic [11:0][11:0] SBOX0;
+        assign SBOX0 = { 12'h58 ,12'h38 , 12'h3c0,12'hd0 ,12'h120, 12'h14 , 12'h60 ,12'h2c , 12'h380,12'hf0 ,12'h1a0 ,12'h12   }; 
+        logic [11:0] sbox_rnd0;
+        assign sbox_rnd0 = SBOX0[sbox_ctrl];
+            `else
+        `endif
+        
+        logic [383:0] state_interm; 
       
       
         //Greek syms.  θ ρwest ι Χ ρeast
@@ -480,49 +496,49 @@
                           state_in[263:256],state_in[271:264],state_in[279:272],state_in[287:280]
                           };
     
-				 assign permin = (sbox_ctrl == PERM_INIT) ? bits_le : state_recycle;  
-					
-						 `ifdef THREE_ROUND_PERMUTE
-						 permute_rnd3 perm3( 
-					
-							.rc0  (sbox_rnd0),
-							.rc1  (sbox_rnd1),
-							.rc2  (sbox_rnd2),
-							.state_in  (permin),
-							
-							.state_out (state_interm)
+         assign permin = (sbox_ctrl == PERM_INIT) ? bits_le : state_recycle;  
+          
+             `ifdef THREE_ROUND_PERMUTE
+             permute_rnd3 perm3( 
+          
+              .rc0  (sbox_rnd0),
+              .rc1  (sbox_rnd1),
+              .rc2  (sbox_rnd2),
+              .state_in  (permin),
+              
+              .state_out (state_interm)
 
-					); 
-					`elsif ONE_ROUND_PERMUTE
-					 permute_rnd1 perm1( 
-					
-							.rc0  (sbox_rnd0),
-							.state_in  (permin),
-							
-							.state_out (state_interm)
+          ); 
+          `elsif ONE_ROUND_PERMUTE
+           permute_rnd1 perm1( 
+          
+              .rc0  (sbox_rnd0),
+              .state_in  (permin),
+              
+              .state_out (state_interm)
 
-					);
-						`else
-					`endif
-							
-					rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
-				
+          );
+            `else
+          `endif
+              
+          rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
+        
 
-					assign state_out = {      state_interm[103:96] ,state_interm[111:104],state_interm[119:112],state_interm[127:120],
-																		state_interm[71:64]  ,state_interm[79:72]  ,state_interm[87:80]  ,state_interm[95:88],
-																		state_interm[39:32]  ,state_interm[47:40]  ,state_interm[55:48]  ,state_interm[63:56],
-																		state_interm[7:0]    ,state_interm[15:8]   ,state_interm[23:16]  ,state_interm[31:24],                          
-																		
-																		state_interm[231:224],state_interm[239:232],state_interm[247:240],state_interm[255:248],
-																		state_interm[199:192],state_interm[207:200],state_interm[215:208],state_interm[223:216],
-																		state_interm[167:160],state_interm[175:168],state_interm[183:176],state_interm[191:184],
-																		state_interm[135:128],state_interm[143:136],state_interm[151:144],state_interm[159:152],
-																		
-																		state_interm[359:352],state_interm[367:360],state_interm[375:368], state_interm[383:376],
-																		state_interm[327:320],state_interm[335:328],state_interm[343:336],state_interm[351:344],
-																		state_interm[295:288],state_interm[303:296],state_interm[311:304],state_interm[319:312],
-																		state_interm[263:256],state_interm[271:264],state_interm[279:272],state_interm[287:280]
-																	}; 
+          assign state_out = {      state_interm[103:96] ,state_interm[111:104],state_interm[119:112],state_interm[127:120],
+                                    state_interm[71:64]  ,state_interm[79:72]  ,state_interm[87:80]  ,state_interm[95:88],
+                                    state_interm[39:32]  ,state_interm[47:40]  ,state_interm[55:48]  ,state_interm[63:56],
+                                    state_interm[7:0]    ,state_interm[15:8]   ,state_interm[23:16]  ,state_interm[31:24],                          
+                                    
+                                    state_interm[231:224],state_interm[239:232],state_interm[247:240],state_interm[255:248],
+                                    state_interm[199:192],state_interm[207:200],state_interm[215:208],state_interm[223:216],
+                                    state_interm[167:160],state_interm[175:168],state_interm[183:176],state_interm[191:184],
+                                    state_interm[135:128],state_interm[143:136],state_interm[151:144],state_interm[159:152],
+                                    
+                                    state_interm[359:352],state_interm[367:360],state_interm[375:368], state_interm[383:376],
+                                    state_interm[327:320],state_interm[335:328],state_interm[343:336],state_interm[351:344],
+                                    state_interm[295:288],state_interm[303:296],state_interm[311:304],state_interm[319:312],
+                                    state_interm[263:256],state_interm[271:264],state_interm[279:272],state_interm[287:280]
+                                  }; 
      
      
        endmodule: permute
