@@ -1,9 +1,25 @@
 
+localparam MUX = 1; 
+
+localparam NUM_RNDS_PER_CLK = 3;
+
+
+`define THREE_ROUND_PERMUTE       
+  `ifdef THREE_ROUND_PERMUTE
+         localparam  PERM_INIT = 3'h3;   
+  `elsif ONE_ROUND_PERMUTE
+         localparam  PERM_INIT = 4'hb;   
+  `elsif  FOUR_ROUND_PERMUTE
+         localparam  PERM_INIT = 3'h2;   
+  `else
+  `endif 
+
+
 
       module xoodyak_build(
           input logic             eph1,
           input logic             reset,
-          
+       
           input logic [351:0]     input_data, 
           input logic [3:0]       opmode,    
 
@@ -13,6 +29,8 @@
           output logic            textout_valid_r
           
         );
+
+
         
                 //----------------------------------------------------------------
                 //Technical briefing on XOODYAK
@@ -130,7 +148,11 @@
             
                  
            */ 
-      
+
+ logic [$bits(PERM_INIT)-1:0] perm_ctr_r,  perm_ctr_next; 
+
+
+
             //----------------------------------------------------------------
             //XOODYAK's governing Finite State Machine  
             //
@@ -166,7 +188,6 @@
           logic [383:0]            state_cyclist, permute_in, permute_out, absorb_out , state_r, permin_cd_added, permin, sqz_down, down_out,crypt_down,
                                    saved_data_r, saved_next, abs_down_modifier, abs_keyed, abs_hash, abs_non, down_input;            
           
-          parameter logic MUX = 1; 
           
           assign run =      sm_cyc      | sm_non      | sm_abs      | sm_enc       | sm_dec      | sm_sqz      | sm_sky      | sm_rat;
           assign run_next = sm_cyc_next | sm_non_next | sm_abs_next | sm_enc_next  | sm_dec_next | sm_sqz_next | sm_rat_next | sm_sky_next; //sm_non;
@@ -216,28 +237,13 @@
           //State Counters.  Counts how many clocks remain before a state change. 
           //----------------------------------------------------------------   
 
-          `define THREE_ROUND_PERMUTE       
-         `ifdef THREE_ROUND_PERMUTE
-         logic [2:0] perm_ctr_r,  perm_ctr_next; 
-         parameter logic [2:0] PERM_INIT = 3'h3;   
-         parameter CTR_WID = 3;
-         `elsif ONE_ROUND_PERMUTE
-         logic [3:0] perm_ctr_r,  perm_ctr_next; 
-         parameter logic [3:0] PERM_INIT = 4'hb;   
-         parameter CTR_WID = 4;
-         `elsif  FOUR_ROUND_PERMUTE
-         logic [1:0] perm_ctr_r,  perm_ctr_next; 
-         parameter logic [1:0] PERM_INIT = 3'h2;   
-         parameter CTR_WID = 2;        
-          `else
-         `endif 
          
           assign permute_run_next = ~(sm_idle_next|one_clock_functions);
           assign op_switch_next = (perm_ctr_r == 0) | one_clock_functions; 
           assign op_switch_adv = (perm_ctr_r == 1) | one_clock_next;          
           assign perm_ctr_next = perm_ctr_r - 1; 
-                    
-          rregs_en #(CTR_WID,MUX) permc_4 (perm_ctr_r, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
+                          
+          rregs_en #($bits(PERM_INIT),MUX) permc_4 (perm_ctr_r, (reset | op_switch_next ) ? PERM_INIT : perm_ctr_next, eph1, run_next|reset);  
          
 
           //----------------------------------------------------------------
@@ -331,7 +337,7 @@
             //----------------------------------------------------------------                
           
 
-          permute #(PERM_INIT, MUX, CTR_WID) xoopermute(
+          permute xoopermute(
               .eph1          (eph1),
               .reset         (reset),
               .run           (permute_run_next),
@@ -404,14 +410,14 @@
  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
  
      
-      module permute #(parameter PERM_INIT, parameter MUX, parameter CTR_WID)( 
+      module permute ( 
       
           input logic          eph1,
           input logic          reset, 
            
           input logic          run,  //No serious start condition here, this only allows the output to turn over, which should happen whenever the output is take_inputs.  
           input logic  [383:0] state_in,  //Indicies: plane, lane, zed
-          input logic  [CTR_WID-1:0]   sbox_ctrl, 
+          input logic  [$bits(PERM_INIT)-1:0]   sbox_ctrl, 
           
           output logic [383:0] state_out
 
@@ -453,7 +459,6 @@
         ///////////////////////////////////////////Permute Setup//////////////////////////////////////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////////////////
         
-          `define THREE_ROUND_PERMUTE  
           `ifdef THREE_ROUND_PERMUTE
         logic [3:0][11:0] SBOX0, SBOX1, SBOX2;
         assign SBOX0 = { 12'h58 ,  12'hd0 ,  12'h60 , 12'hf0   }; 
