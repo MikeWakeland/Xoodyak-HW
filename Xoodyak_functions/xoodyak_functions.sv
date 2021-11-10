@@ -4,7 +4,7 @@ localparam MUX = 1;
 localparam NUM_RNDS_PER_CLK = 3;
 
 
-`define THREE_ROUND_PERMUTE       
+`define ONE_ROUND_PERMUTE       
   `ifdef THREE_ROUND_PERMUTE
          localparam  PERM_INIT = 3'h3;   
   `elsif ONE_ROUND_PERMUTE
@@ -180,7 +180,7 @@ localparam NUM_RNDS_PER_CLK = 3;
                                    shadow_cyc, shadow_non, shadow_abs, shadow_enc, shadow_dec, shadow_sqz, shadow_rat, shadow_sky,                           
                                    meta_cyc, permute_run_next, one_clock_next, op_switch_adv, sqz_exception, take_inputs,
                                    hash_abs_exception;               
-           logic [2:0]              output_decode, func_queue1, func_queue2;           
+          logic [2:0]              output_decode, func_queue1, func_queue2;           
           logic [3:0]              opmode_r; 
           logic [127:0]            key,nonce, ex_hash;                  
           logic [191:0]            textout_sel, text, ex_rat, ex_dec;
@@ -501,7 +501,7 @@ localparam NUM_RNDS_PER_CLK = 3;
                           state_in[263:256],state_in[271:264],state_in[279:272],state_in[287:280]
                           };
     
-         assign permin = (sbox_ctrl == PERM_INIT) ? bits_le : state_recycle;  
+         assign permin = (sbox_ctrl == PERM_INIT) ? bits_le : state_recycle;
           
 					    `ifdef THREE_ROUND_PERMUTE
              logic [383:0]  roundout1, roundout2 ;
@@ -539,13 +539,13 @@ localparam NUM_RNDS_PER_CLK = 3;
               
               .state_out (state_interm)
 
-          );
+          );					
+					
             `else
           `endif
               
-          rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);      
-        
-
+          rregs_en #(384,MUX) permstate_6 (state_recycle, reset ? '0 : state_interm, eph1, reset|run);   
+      
           assign state_out = {      state_interm[103:96] ,state_interm[111:104],state_interm[119:112],state_interm[127:120],
                                     state_interm[71:64]  ,state_interm[79:72]  ,state_interm[87:80]  ,state_interm[95:88],
                                     state_interm[39:32]  ,state_interm[47:40]  ,state_interm[55:48]  ,state_interm[63:56],
@@ -697,3 +697,137 @@ assign rho_west_0[0][0] = theta_out_0[0][0];  //The round constant, 32'h58, shou
         assign state_out = rho_east_0;
 
       endmodule: permute_rnd1      
+			
+   
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////Round zero///////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////
+        
+        //θ 
+        
+        logic [3:0][31:0] p_0, e_0; //Indicies: lane, zed.
+        logic [2:0][3:0][31:0] perm_input_0;
+
+        assign perm_input_0 = state_in;
+        
+        // P <- A0 + A1 + A2
+        assign p_0 =  perm_input_0[0]^perm_input_0[1]^perm_input_0[2]; 
+
+        // P<<<(1, 5)
+        logic [3:0][31:0] p_x1_z5_0, p_x1_z14_0;
+        assign p_x1_z5_0[3] = {p_0[0][26:0], p_0[0][31:27]}; 
+        assign p_x1_z5_0[2] = {p_0[3][26:0], p_0[3][31:27]}; 
+        assign p_x1_z5_0[1] = {p_0[2][26:0], p_0[2][31:27]}; 
+        assign p_x1_z5_0[0] = {p_0[1][26:0], p_0[1][31:27]};
+
+        // P<<<(1, 14)
+        assign p_x1_z14_0[3] ={p_0[0][17:0], p_0[0][31:18]};
+        assign p_x1_z14_0[2] ={p_0[3][17:0], p_0[3][31:18]}; 
+        assign p_x1_z14_0[1] ={p_0[2][17:0], p_0[2][31:18]}; 
+        assign p_x1_z14_0[0] ={p_0[1][17:0], p_0[1][31:18]};  
+
+        // E <- P<<<(1, 5) ^  P<<<(1, 14)
+        assign e_0 = p_x1_z5_0^p_x1_z14_0;
+
+        
+        // Ay <- Ay ^ E, for y={0,1,2}
+        logic [2:0][3:0][31:0] theta_out_0;
+        
+        assign theta_out_0[2] = perm_input_0[2]^e_0;
+        assign theta_out_0[1] = perm_input_0[1]^e_0;
+        assign theta_out_0[0] = perm_input_0[0]^e_0;
+
+        //End θ
+
+
+        //ρwest
+                
+        logic [2:0][3:0][31:0] rho_west_0;
+
+        // A2 <- A2<<<(0,11)
+        // Shifts the A2 plane 11 bits in the +z direction.  
+        assign rho_west_0[2][3] = {theta_out_0[2][3][20:0] , theta_out_0[2][3][31:21]};
+        assign rho_west_0[2][2] = {theta_out_0[2][2][20:0] , theta_out_0[2][2][31:21]};
+        assign rho_west_0[2][1] = {theta_out_0[2][1][20:0] , theta_out_0[2][1][31:21]};
+        assign rho_west_0[2][0] = {theta_out_0[2][0][20:0] , theta_out_0[2][0][31:21]};
+
+        // A1 <- A1<<<(1,0)
+        assign rho_west_0[1][3] = theta_out_0[1][0];
+        assign rho_west_0[1][2] = theta_out_0[1][3];
+        assign rho_west_0[1][1] = theta_out_0[1][2];
+        assign rho_west_0[1][0] = theta_out_0[1][1];
+        
+
+        // ι, which is included as part of ρwest
+        // A0 <- A0^Ci 
+     /***WARNING! Table 2 of the the specification requires that the round constant's least significant bit is at z = 0,
+         but software test benching has reversed what order these values are applied.  For consistency purposes I have 
+         kept them reversed to match the software, but this is not algorithmically correct per the specification.*** */
+
+assign rho_west_0[0][3][31:12]= theta_out_0[0][3][31:12];
+assign rho_west_0[0][3][11:0] = theta_out_0[0][3][11:0] ^ rc0; 
+        assign rho_west_0[0][2] = theta_out_0[0][2]; 
+        assign rho_west_0[0][1] = theta_out_0[0][1]; 
+assign rho_west_0[0][0] = theta_out_0[0][0];  //The round constant, 32'h58, should be applied HERE.
+
+        //END ρwest
+          
+
+        //Χ  
+        logic [2:0][3:0][31:0] chi_out_0;
+        
+        //Logically computes the following steps:
+        // B0 <- ~A1^A2
+        // B1 <- ~A2^A0
+        // B2 <- ~A0^A1
+        // Ay <- Ay^By for y{0,1,2}
+        assign chi_out_0[2] = rho_west_0[2]^(rho_west_0[1]&~rho_west_0[0]);
+        assign chi_out_0[1] = rho_west_0[1]^(rho_west_0[0]&~rho_west_0[2]);
+        assign chi_out_0[0] = rho_west_0[0]^(rho_west_0[2]&~rho_west_0[1]);
+        
+        //END X
+        
+        
+        //ρeast
+        
+        logic [2:0][3:0][31:0] rho_east_0;
+        
+        //A2 <- A2<<<(2,8)
+        assign rho_east_0[2][3] = {chi_out_0[2][1][23:0], chi_out_0[2][1][31:24]};
+        assign rho_east_0[2][2] = {chi_out_0[2][0][23:0], chi_out_0[2][0][31:24]};
+        assign rho_east_0[2][1] = {chi_out_0[2][3][23:0], chi_out_0[2][3][31:24]};
+        assign rho_east_0[2][0] = {chi_out_0[2][2][23:0], chi_out_0[2][2][31:24]};
+
+        //A1 <- A1<<<(0,1)
+        assign rho_east_0[1][3] = {chi_out_0[1][3][30:0], chi_out_0[1][3][31]};  
+        assign rho_east_0[1][2] = {chi_out_0[1][2][30:0], chi_out_0[1][2][31]};
+        assign rho_east_0[1][1] = {chi_out_0[1][1][30:0], chi_out_0[1][1][31]};
+        assign rho_east_0[1][0] = {chi_out_0[1][0][30:0], chi_out_0[1][0][31]};
+       
+        //A0 is not modified. 
+        assign rho_east_0[0] = chi_out_0[0];
+
+       //end ρeast
+        
+        //ρeast is the final step in the permutation.  The output of round n is fed directly into 
+        //round n+1.  
+        
+        logic [383:0] round_out_0;
+        assign state_out = rho_east_0;
+
+      endmodule: permute_rndN      			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			

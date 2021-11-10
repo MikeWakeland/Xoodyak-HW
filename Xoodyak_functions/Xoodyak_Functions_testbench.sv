@@ -107,11 +107,10 @@ keyed initialize -> nonce -> absorb -> absorb -> squeezekey() */
 //Using the 4 clock version.   	
    assign opmode_t = { 
   
-6'h10, 6'h9, 6'h9, 6'h13, 6'h13,  6'h16, 6'h16,  6'h13, 6'h13,             //   hash -> abs -> abs -> abs -> sqz -> sqz -> abs -> -abs
-6'h0 , 6'h0, 6'h0, 6'h1 , 6'h2 , 6'h3 , 6'h3,  6'h5 , 6'h5 , 6'h6,  6'h6, 6'h6,  // cyc key -> non -> abs -> abs -> dec -> dec -> sqz -> sqz
-6'h0 , 6'h0, 6'h0, 6'h0, 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h4,  6'h4 ,  6'h8, 6'h3,       // cyc key -> non -> abs -> abs -> enc -> enc -> sky
+6'h10, 6'h9, 6'h9, 6'h13, 6'h13,  6'h16, 6'h16,  6'h13, 6'h13,                     //   hash -> abs -> abs -> abs -> sqz -> sqz -> abs -> -abs
+6'h0 , 6'h0, 6'h0, 6'h1 , 6'h2 , 6'h3 , 6'h3,  6'h5 , 6'h5 , 6'h6,  6'h6, 6'h6,   // cyc key -> non -> abs -> abs -> dec -> dec -> sqz -> sqz
+6'h0 , 6'h0, 6'h0, 6'h0, 6'h1 ,  6'h3 , 6'h3 , 6'h4,  6'h4 ,  6'h8, 6'h3,       // cyc key -> non -> abs -> abs -> enc -> enc -> sky
 6'h0 , 6'h0, 6'h0, 6'h0, 6'h1 , 6'h2,  6'h3 , 6'h3 , 6'h4,  6'h4 ,  6'h7, 6'h7,
-
 
 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0, 6'h0,
 
